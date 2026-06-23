@@ -1,0 +1,386 @@
+/* REMINDEE — QSS stylesheet
+   Tokens replaced at runtime by ui/styles.py:
+   @bg @surface @surface2 @border @text @text2 @accent @accent_hover @danger @success @radius
+*/
+
+QMainWindow, QDialog {
+    background-color: @bg;
+}
+
+/* ── Sidebar ──────────────────────────────────────── */
+QWidget#Sidebar {
+    background-color: @surface;
+    border-right: 1px solid @border;
+    min-width: 200px;
+    max-width: 200px;
+}
+
+QPushButton#SidebarBtn {
+    background: transparent;
+    color: @text2;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    text-align: left;
+    font-size: 14px;
+}
+
+QPushButton#SidebarBtn:hover {
+    background: @surface2;
+    color: @text;
+}
+
+QPushButton#SidebarBtn[active="true"] {
+    background: @accent;
+    color: #ffffff;
+    font-weight: 600;
+}
+
+QLabel#UserName {
+    color: @text;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4px 8px;
+}
+
+QLabel#UserEmail {
+    color: @text2;
+    font-size: 11px;
+    padding: 0 8px 8px;
+}
+
+/* ── Content area ─────────────────────────────────── */
+QWidget#ContentArea {
+    background-color: @bg;
+}
+
+QLabel#ViewTitle {
+    color: @text;
+    font-size: 22px;
+    font-weight: 700;
+    padding: 24px 24px 8px;
+}
+
+QScrollArea {
+    background: transparent;
+    border: none;
+}
+
+QScrollBar:vertical {
+    background: @surface;
+    width: 6px;
+    border-radius: 3px;
+}
+
+QScrollBar::handle:vertical {
+    background: @border;
+    border-radius: 3px;
+    min-height: 30px;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0;
+}
+
+/* ── Reminder Card ────────────────────────────────── */
+QFrame#ReminderCard {
+    background-color: @surface;
+    border: 1px solid @border;
+    border-radius: @radius;
+    padding: 4px;
+}
+
+QFrame#ReminderCard:hover {
+    border-color: @accent;
+}
+
+QLabel#CardTitle {
+    color: @text;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+QLabel#CardDetails {
+    color: @text2;
+    font-size: 12px;
+}
+
+QLabel#CardTrigger {
+    color: @text2;
+    font-size: 11px;
+}
+
+QLabel#FreqBadge {
+    background: @surface2;
+    color: @text2;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+QPushButton#CardActionBtn {
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: @text2;
+    font-size: 18px;
+    padding: 4px 6px;
+}
+
+QPushButton#CardActionBtn:hover {
+    background: @surface2;
+    color: @text;
+}
+
+/* ── FAB ──────────────────────────────────────────── */
+QPushButton#FAB {
+    background-color: @accent;
+    color: #ffffff;
+    font-size: 28px;
+    font-weight: 300;
+    border: none;
+    border-radius: 28px;
+    width: 56px;
+    height: 56px;
+}
+
+QPushButton#FAB:hover {
+    background-color: @accent_hover;
+}
+
+QPushButton#FAB:pressed {
+    background-color: @accent;
+}
+
+/* ── Login / Register ─────────────────────────────── */
+QWidget#LoginPage, QWidget#RegisterPage {
+    background: @bg;
+}
+
+QLabel#AppTitle {
+    color: @accent;
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: 2px;
+}
+
+QLabel#AppSubtitle {
+    color: @text2;
+    font-size: 13px;
+}
+
+QLabel#FormLabel {
+    color: @text;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+QLineEdit#FormInput {
+    background: @surface;
+    border: 1.5px solid @border;
+    border-radius: 8px;
+    color: @text;
+    font-size: 14px;
+    padding: 10px 12px;
+}
+
+QLineEdit#FormInput:focus {
+    border-color: @accent;
+}
+
+QPushButton#PrimaryBtn {
+    background: @accent;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 12px;
+}
+
+QPushButton#PrimaryBtn:hover {
+    background: @accent_hover;
+}
+
+QPushButton#SecondaryBtn {
+    background: @surface;
+    color: @text;
+    border: 1.5px solid @border;
+    border-radius: 8px;
+    font-size: 14px;
+    padding: 11px;
+}
+
+QPushButton#SecondaryBtn:hover {
+    border-color: @accent;
+    color: @accent;
+}
+
+QPushButton#LinkBtn {
+    background: transparent;
+    border: none;
+    color: @accent;
+    font-size: 13px;
+    text-decoration: underline;
+}
+
+QPushButton#LinkBtn:hover {
+    color: @accent_hover;
+}
+
+QLabel#ErrorLabel {
+    color: @danger;
+    font-size: 12px;
+}
+
+/* ── Reminder Dialog ──────────────────────────────── */
+QDialog#ReminderDialog {
+    background: @bg;
+}
+
+QLabel#DialogTitle {
+    color: @text;
+    font-size: 18px;
+    font-weight: 700;
+    padding-bottom: 8px;
+}
+
+QTextEdit#DetailsEdit {
+    background: @surface;
+    border: 1.5px solid @border;
+    border-radius: 8px;
+    color: @text;
+    font-size: 14px;
+    padding: 10px;
+}
+
+QTextEdit#DetailsEdit:focus {
+    border-color: @accent;
+}
+
+QComboBox#FreqCombo {
+    background: @surface;
+    border: 1.5px solid @border;
+    border-radius: 8px;
+    color: @text;
+    font-size: 14px;
+    padding: 10px 12px;
+    min-height: 40px;
+}
+
+QComboBox#FreqCombo:focus {
+    border-color: @accent;
+}
+
+QComboBox#FreqCombo::drop-down {
+    border: none;
+    padding-right: 8px;
+}
+
+QComboBox QAbstractItemView {
+    background: @surface;
+    border: 1px solid @border;
+    color: @text;
+    selection-background-color: @accent;
+    selection-color: #ffffff;
+    border-radius: 4px;
+}
+
+QCalendarWidget {
+    background: @surface;
+    color: @text;
+    border: 1px solid @border;
+    border-radius: 8px;
+}
+
+QCalendarWidget QToolButton {
+    background: transparent;
+    color: @text;
+    border: none;
+    font-size: 13px;
+    padding: 4px 8px;
+}
+
+QCalendarWidget QToolButton:hover {
+    background: @surface2;
+    border-radius: 4px;
+}
+
+QCalendarWidget QAbstractItemView {
+    background: @surface;
+    color: @text;
+    selection-background-color: @accent;
+    selection-color: #ffffff;
+}
+
+QTimeEdit {
+    background: @surface;
+    border: 1.5px solid @border;
+    border-radius: 8px;
+    color: @text;
+    font-size: 14px;
+    padding: 8px 12px;
+}
+
+QTimeEdit:focus {
+    border-color: @accent;
+}
+
+/* ── Action Bubble ────────────────────────────────── */
+QDialog#ActionBubble {
+    background: @surface;
+    border: 1px solid @border;
+    border-radius: 12px;
+}
+
+QLabel#BubbleName {
+    color: @text;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+QLabel#BubbleDetail {
+    color: @text2;
+    font-size: 12px;
+}
+
+QPushButton#BubbleDoneBtn {
+    background: @success;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QPushButton#BubbleSnoozeBtn {
+    background: @surface2;
+    color: @text;
+    border: 1px solid @border;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+}
+
+QPushButton#BubbleDismissBtn {
+    background: transparent;
+    color: @text2;
+    border: 1px solid @border;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+}
+
+/* ── Empty state ──────────────────────────────────── */
+QLabel#EmptyStateLabel {
+    color: @text2;
+    font-size: 15px;
+}
+
+/* ── Calendar view dots (painted in Python) ───────── */
+QCalendarWidget#MainCalendar {
+    background: @surface;
+    border: none;
+}
