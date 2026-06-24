@@ -11,23 +11,63 @@
      @danger        @success       @shadow        @radius
    ═══════════════════════════════════════════════════════════════ */
 
-/* ── Root ──────────────────────────────────────────────────────── */
+/* ── Root ──────────────────────────────────────────────────────────
+   WA_TranslucentBackground is set on the window in Python.
+   background:transparent here lets the desktop show through.
+   The semi-opaque backdrop lives on QWidget#CentralWidget.
+   ─────────────────────────────────────────────────────────────── */
 QMainWindow {
-    background: @bg_gradient;
+    background: transparent;
 }
 
+/* All dialogs: near-opaque so they stay readable */
 QDialog {
-    background: @bg_gradient;
+    background: rgba(255, 252, 248, 0.94);
 }
 
-/* ── Sidebar ───────────────────────────────────────────────────── */
+/* Login dialog is also WA_TranslucentBackground; glass card shows through */
+QDialog#LoginDialog {
+    background: transparent;
+}
+
+/* Semi-transparent main content area — desktop bleeds through */
+QWidget#CentralWidget {
+    background: rgba(255, 248, 242, 0.80);
+}
+
+/* ── Sidebar — solid orange gradient ───────────────────────────── */
 QWidget#Sidebar {
-    background: @surface_side;
-    border-right: 1px solid @border;
+    background: qlineargradient(x1:0, y1:0, x2:0.2, y2:1,
+        stop:0 #FF7A45, stop:1 #E84515);
+    border-right: none;
     min-width: 210px;
     max-width: 210px;
 }
 
+/* Override labels/buttons inside the sidebar to white */
+QWidget#Sidebar QLabel#AppTitle {
+    color: #ffffff;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    padding: 6px 0 2px;
+    qproperty-alignment: AlignCenter;
+}
+
+QWidget#Sidebar QLabel#UserName {
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4px 10px 0;
+}
+
+QWidget#Sidebar QLabel#UserEmail {
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 11px;
+    padding: 0 10px 10px;
+}
+
+/* Global AppTitle (login page) stays orange */
 QLabel#AppTitle {
     color: @accent;
     font-size: 20px;
@@ -52,7 +92,7 @@ QLabel#UserEmail {
 
 QPushButton#SidebarBtn {
     background: transparent;
-    color: @text2;
+    color: rgba(255, 255, 255, 0.78);
     border: none;
     border-radius: 10px;
     padding: 11px 14px;
@@ -62,12 +102,12 @@ QPushButton#SidebarBtn {
 }
 
 QPushButton#SidebarBtn:hover {
-    background: @surface2;
-    color: @text;
+    background: rgba(255, 255, 255, 0.16);
+    color: #ffffff;
 }
 
 QPushButton#SidebarBtn[active="true"] {
-    background: @accent;
+    background: rgba(255, 255, 255, 0.24);
     color: #ffffff;
     font-weight: 700;
 }
@@ -190,9 +230,7 @@ QPushButton#FAB:pressed {
 }
 
 /* ── Login / Register ──────────────────────────────────────────── */
-QDialog#LoginDialog {
-    background: @bg_gradient;
-}
+/* LoginDialog background handled in the root section above */
 
 QWidget#LoginPage,
 QWidget#RegisterPage {
@@ -287,9 +325,7 @@ QLabel#ErrorLabel {
 }
 
 /* ── Reminder Dialog ───────────────────────────────────────────── */
-QDialog#ReminderDialog {
-    background: @bg_gradient;
-}
+/* ReminderDialog inherits from QDialog { background: rgba... } above */
 
 QLabel#DialogTitle {
     color: @text;
@@ -479,9 +515,7 @@ QPushButton#BubbleDismissBtn {
 }
 
 /* ── Settings ──────────────────────────────────────────────────── */
-QDialog#SettingsDialog {
-    background: @bg_gradient;
-}
+/* SettingsDialog inherits from QDialog { background: rgba... } above */
 
 /* ── Empty state ───────────────────────────────────────────────── */
 QLabel#EmptyStateLabel {
