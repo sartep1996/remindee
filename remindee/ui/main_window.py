@@ -474,9 +474,14 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        # Keep FAB in bottom-right corner of the central widget
+        # _fab is created inside _build_ui(); guard against Qt firing resizeEvent
+        # before _build_ui() completes (e.g. during the super().__init__ geometry pass).
+        if not hasattr(self, "_fab"):
+            return
         fab = self._fab
         cw = self.centralWidget()
+        if cw is None:
+            return
         margin = 24
         fab.move(cw.width() - fab.width() - margin, cw.height() - fab.height() - margin)
         fab.raise_()

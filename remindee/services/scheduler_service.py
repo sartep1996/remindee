@@ -119,9 +119,12 @@ class SchedulerService:
     def _on_trigger_random(self, reminder_id: int) -> None:
         self.signals.triggered.emit(reminder_id)
         # Reschedule for next random interval
+        reminder = None  # guard against NameError if session.get() raises before assignment
         with get_session() as session:
             reminder = session.get(Reminder, reminder_id)
             if reminder and reminder.is_active and not reminder.is_done:
                 session.expunge(reminder)
+            else:
+                reminder = None
         if reminder:
             self.schedule_reminder(reminder)

@@ -46,7 +46,16 @@ class NotificationService:
     def show_action_bubble(self, reminder: Reminder) -> None:
         if reminder.id in self._active_bubbles:
             existing = self._active_bubbles[reminder.id]
-            if existing.isVisible():
+            # The Python wrapper may outlive the underlying C++ QObject if the
+            # bubble was closed and GC hasn't run yet — guard before calling any
+            # Qt method on it.
+            try:
+                still_visible = existing.isVisible()
+            except RuntimeError:
+                # C++ object already deleted; treat as if the bubble is gone.
+                still_visible = False
+                self._active_bubbles.pop(reminder.id, None)
+            if still_visible:
                 existing.raise_()
                 existing.activateWindow()
                 return
@@ -131,12 +140,15 @@ class ActionBubble(QDialog):
 
     def _snooze(self) -> None:
         snooze_until = datetime.utcnow() + timedelta(minutes=30)
+        reminder = None  # guard against NameError if session.get() raises before assignment
         with get_session() as session:
             reminder = session.get(Reminder, self._reminder_id)
             if reminder:
                 reminder.snooze_until = snooze_until
                 reminder.next_trigger = snooze_until
                 session.expunge(reminder)
+            else:
+                reminder = None
 
         if reminder:
             from remindee.models.reminder import FrequencyType

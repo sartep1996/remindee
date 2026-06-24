@@ -9,6 +9,10 @@ import remindee.models.reminder  # noqa: F401 — registers Reminder with Base.m
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False},
+    # pool_pre_ping evicts stale connections that would otherwise surface as
+    # "database is locked" errors when APScheduler's background thread races
+    # with the main thread under SQLite's default serialised-writes behaviour.
+    pool_pre_ping=True,
 )
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)

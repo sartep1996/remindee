@@ -6,6 +6,7 @@ from typing import Optional
 
 import bcrypt
 import requests
+from sqlalchemy.exc import IntegrityError
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2.credentials import Credentials
@@ -35,18 +36,21 @@ class LocalAuthService:
     @staticmethod
     def register(username: str, email: str, password: str) -> User:
         pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-        with get_session() as session:
-            user = User(
-                username=username,
-                email=email.lower().strip(),
-                password_hash=pw_hash,
-                display_name=username,
-            )
-            session.add(user)
-            session.flush()
-            session.refresh(user)
-            # detach so the object lives beyond this session
-            session.expunge(user)
+        try:
+            with get_session() as session:
+                user = User(
+                    username=username,
+                    email=email.lower().strip(),
+                    password_hash=pw_hash,
+                    display_name=username,
+                )
+                session.add(user)
+                session.flush()
+                session.refresh(user)
+                # detach so the object lives beyond this session
+                session.expunge(user)
+        except IntegrityError:
+            raise ValueError("Email already registered")
         return user
 
     @staticmethod
@@ -86,12 +90,17 @@ class GoogleAuthService:
         return self._flow.run_local_server(port=0, open_browser=True)
 
     def get_or_create_user(self, credentials: Credentials) -> User:
-        resp = requests.get(
-            "https://www.googleapis.com/oauth2/v3/userinfo",
-            headers={"Authorization": f"Bearer {credentials.token}"},
-            timeout=10,
-        )
-        resp.raise_for_status()
+        try:
+            resp = requests.get(
+                "https://www.googleapis.com/oauth2/v3/userinfo",
+                headers={"Authorization": f"Bearer {credentials.token}"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+        except requests.RequestException as exc:
+            raise RuntimeError(
+                f"Failed to fetch Google user info: {exc}"
+            ) from exc
         info = resp.json()
 
         google_id = info.get("sub", "")
