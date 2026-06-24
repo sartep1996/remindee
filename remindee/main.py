@@ -25,8 +25,8 @@ def main() -> None:
     # Initialize DB tables
     init_db()
 
-    # Apply default dark theme before showing anything
-    apply_theme(app, "dark")
+    # Apply default light (white + orange) theme before showing anything
+    apply_theme(app, "light")
 
     scheduler = SchedulerService()
 

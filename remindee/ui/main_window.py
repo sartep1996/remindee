@@ -50,7 +50,8 @@ class MainWindow(QMainWindow):
         self._active_tab = 0
 
         self.setWindowTitle("REMINDEE")
-        self.setMinimumSize(900, 620)
+        self.setMinimumSize(940, 640)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
         self._setup_tray()
         self._notification_service = NotificationService(self._tray, scheduler)
@@ -132,10 +133,10 @@ class MainWindow(QMainWindow):
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
         sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(200)
+        sidebar.setFixedWidth(210)
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(12, 20, 12, 12)
-        layout.setSpacing(4)
+        layout.setContentsMargins(14, 24, 14, 16)
+        layout.setSpacing(2)
 
         # App branding
         app_lbl = QLabel("REMINDEE")
@@ -196,8 +197,8 @@ class MainWindow(QMainWindow):
 
         # store the layout on the scroll_content
         cards_layout = QVBoxLayout(scroll_content)
-        cards_layout.setContentsMargins(24, 12, 24, 80)
-        cards_layout.setSpacing(10)
+        cards_layout.setContentsMargins(28, 14, 28, 90)
+        cards_layout.setSpacing(12)
         cards_layout.addStretch()
 
         scroll.setWidget(scroll_content)

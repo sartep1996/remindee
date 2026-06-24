@@ -44,9 +44,10 @@ class LoginDialog(QDialog):
         self._oauth_thread: Optional[_OAuthThread] = None
 
         self.setWindowTitle("REMINDEE — Sign In")
-        self.setMinimumWidth(420)
+        self.setMinimumWidth(440)
         self.setModal(True)
         self.setObjectName("LoginDialog")
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
         self._stack = QStackedWidget()
         layout = QVBoxLayout(self)
@@ -64,8 +65,8 @@ class LoginDialog(QDialog):
         page = QWidget()
         page.setObjectName("LoginPage")
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(40, 40, 40, 40)
-        layout.setSpacing(12)
+        layout.setContentsMargins(36, 36, 36, 36)
+        layout.setSpacing(11)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         title = QLabel("REMINDEE")
@@ -77,7 +78,7 @@ class LoginDialog(QDialog):
         sub.setObjectName("AppSubtitle")
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(sub)
-        layout.addSpacing(20)
+        layout.addSpacing(16)
 
         layout.addWidget(self._lbl("Email"))
         self._login_email = QLineEdit()

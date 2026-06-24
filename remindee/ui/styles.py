@@ -6,32 +6,42 @@ from PySide6.QtWidgets import QApplication
 
 _QSS_PATH = Path(__file__).parent.parent / "resources" / "styles.qss"
 
+# Token order matters: longer/more-specific tokens must come before their prefixes
+# so @accent_hover is replaced before @accent, etc.
 _THEMES: dict[str, dict[str, str]] = {
-    "dark": {
-        "@bg": "#1a1a2e",
-        "@surface": "#16213e",
-        "@surface2": "#0f3460",
-        "@border": "#2d3561",
-        "@text": "#e0e0e0",
-        "@text2": "#8892a4",
-        "@accent": "#5b8cff",
-        "@accent_hover": "#4a7aee",
-        "@danger": "#ff5c5c",
-        "@success": "#4caf50",
-        "@radius": "10px",
-    },
     "light": {
-        "@bg": "#f5f6fa",
-        "@surface": "#ffffff",
-        "@surface2": "#f0f2f8",
-        "@border": "#e1e4ed",
-        "@text": "#1a1a2e",
-        "@text2": "#6b7280",
-        "@accent": "#5b8cff",
-        "@accent_hover": "#4a7aee",
-        "@danger": "#ef4444",
-        "@success": "#22c55e",
-        "@radius": "10px",
+        "@bg_gradient":   "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #FFF6EF, stop:1 #FFE8D0)",
+        "@surface_card":  "rgba(255, 255, 255, 0.72)",
+        "@surface_side":  "rgba(255, 255, 255, 0.60)",
+        "@surface2":      "rgba(255, 107, 53, 0.07)",
+        "@surface":       "rgba(255, 255, 255, 0.80)",
+        "@border_glass":  "rgba(255, 255, 255, 0.90)",
+        "@border":        "rgba(255, 107, 53, 0.18)",
+        "@accent_hover":  "#E85D2A",
+        "@accent":        "#FF6B35",
+        "@text2":         "#9A6040",
+        "@text":          "#1C0800",
+        "@danger":        "#EF4444",
+        "@success":       "#22C55E",
+        "@shadow":        "rgba(255, 107, 53, 0.10)",
+        "@radius":        "14px",
+    },
+    "dark": {
+        "@bg_gradient":   "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #0D0804, stop:1 #1A0E06)",
+        "@surface_card":  "rgba(255, 255, 255, 0.07)",
+        "@surface_side":  "rgba(255, 255, 255, 0.05)",
+        "@surface2":      "rgba(255, 107, 53, 0.10)",
+        "@surface":       "rgba(255, 255, 255, 0.06)",
+        "@border_glass":  "rgba(255, 255, 255, 0.10)",
+        "@border":        "rgba(255, 107, 53, 0.18)",
+        "@accent_hover":  "#FF8050",
+        "@accent":        "#FF6B35",
+        "@text2":         "rgba(255, 175, 120, 0.60)",
+        "@text":          "rgba(255, 245, 232, 0.95)",
+        "@danger":        "#FF5C5C",
+        "@success":       "#4CAF50",
+        "@shadow":        "rgba(0, 0, 0, 0.30)",
+        "@radius":        "14px",
     },
 }
 
@@ -40,8 +50,7 @@ def _resolve_theme(theme: str) -> str:
     if theme == "system":
         app = QApplication.instance()
         if app:
-            palette = app.palette()
-            bg = palette.color(QPalette.ColorRole.Window)
+            bg = app.palette().color(QPalette.ColorRole.Window)
             return "dark" if bg.lightness() < 128 else "light"
         return "light"
     return theme if theme in _THEMES else "light"
@@ -60,5 +69,4 @@ def load_qss(theme: str) -> str:
 
 
 def apply_theme(app: QApplication, theme: str) -> None:
-    qss = load_qss(theme)
-    app.setStyleSheet(qss)
+    app.setStyleSheet(load_qss(theme))
