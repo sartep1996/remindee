@@ -5,7 +5,7 @@
    Tokens (in resolution order):
      @bg_gradient   @surface_card  @surface_side  @surface2
      @surface       @border_glass  @border
-     @cal_nav  @cal_alt  @cal_bg
+     @cal_nav
      @accent_hover  @accent
      @text2         @text
      @danger        @success       @shadow        @radius
@@ -349,15 +349,18 @@ QComboBox QAbstractItemView {
     outline: none;
 }
 
-/* Calendar — solid backgrounds are critical; transparent breaks cell rendering */
+/* ── Calendar ───────────────────────────────────────────────────
+   Cell colours are set via QPalette in Python (apply_calendar_palette)
+   because WA_TranslucentBackground on the parent window causes
+   QAbstractItemView to ignore QSS background rules and go black.
+   QSS here only handles the nav bar, buttons, and outer border.
+   ─────────────────────────────────────────────────────────────── */
 QCalendarWidget {
-    background: @cal_bg;
-    color: @text;
     border: 1.5px solid @border;
     border-radius: 10px;
 }
 
-/* Navigation bar (month/year row) */
+/* Navigation bar (prev/next arrows + month label + year spinbox) */
 QCalendarWidget QWidget#qt_calendar_navigationbar {
     background: @cal_nav;
     padding: 6px 4px;
@@ -384,7 +387,6 @@ QCalendarWidget QToolButton::menu-indicator {
     width: 0;
 }
 
-/* Year spin box inside the nav bar */
 QCalendarWidget QSpinBox {
     background: transparent;
     color: @text;
@@ -397,24 +399,7 @@ QCalendarWidget QSpinBox {
 }
 
 QCalendarWidget QSpinBox::up-button,
-QCalendarWidget QSpinBox::down-button {
-    width: 0;
-    height: 0;
-}
-
-/* Day-of-week header row */
-QCalendarWidget QWidget { alternate-background-color: @cal_alt; }
-
-/* Date cells — must NOT be transparent */
-QCalendarWidget QAbstractItemView {
-    background: @cal_bg;
-    color: @text;
-    selection-background-color: @accent;
-    selection-color: #ffffff;
-    alternate-background-color: @cal_alt;
-    outline: none;
-    font-size: 13px;
-}
+QCalendarWidget QSpinBox::down-button { width: 0; height: 0; }
 
 QTimeEdit {
     background: @surface;
@@ -508,7 +493,6 @@ QLabel#EmptyStateLabel {
 
 /* ── Main calendar view (sidebar tab) ──────────────────────────── */
 QCalendarWidget#MainCalendar {
-    background: @cal_bg;
     border: 1.5px solid @border;
     border-radius: @radius;
 }

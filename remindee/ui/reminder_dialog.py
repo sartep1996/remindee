@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from remindee.models.reminder import Reminder, FrequencyType
 from remindee.utils.database import get_session
+from remindee.ui.styles import apply_calendar_palette
 
 if TYPE_CHECKING:
     from remindee.services.scheduler_service import SchedulerService
@@ -107,7 +108,7 @@ class ReminderDialog(QDialog):
         self._calendar.setVerticalHeaderFormat(
             QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader
         )
-        # No minimum date — past months can still be browsed; future-only validated in _save
+        apply_calendar_palette(self._calendar, self._user.theme)
         dt_layout.addWidget(self._calendar)
 
         dt_layout.addWidget(self._make_label("Time"))

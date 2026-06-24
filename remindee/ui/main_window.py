@@ -30,6 +30,7 @@ from remindee.services.notification_service import NotificationService
 from remindee.services.scheduler_service import SchedulerService
 from remindee.ui.reminder_card import ReminderCard
 from remindee.ui.reminder_dialog import ReminderDialog
+from remindee.ui.styles import apply_calendar_palette
 from remindee.utils.database import get_session
 
 _ICONS_DIR = Path(__file__).parent.parent / "resources" / "icons"
@@ -240,9 +241,10 @@ class MainWindow(QMainWindow):
         self._main_calendar.setVerticalHeaderFormat(
             QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader
         )
-        # clicked fires on direct cell click; selectionChanged also covers keyboard nav
+        # Only connect `clicked` — selectionChanged also fires on month nav arrows,
+        # which caused the calendar to jump months unexpectedly.
         self._main_calendar.clicked.connect(self._on_calendar_date_clicked)
-        self._main_calendar.selectionChanged.connect(self._on_calendar_selection_changed)
+        apply_calendar_palette(self._main_calendar, self._user.theme)
         layout.addWidget(self._main_calendar)
 
         self._cal_list_label = QLabel("Select a date to see reminders")
@@ -335,9 +337,6 @@ class MainWindow(QMainWindow):
         selected = self._main_calendar.selectedDate()
         if selected.isValid():
             self._on_calendar_date_clicked(selected)
-
-    def _on_calendar_selection_changed(self) -> None:
-        self._on_calendar_date_clicked(self._main_calendar.selectedDate())
 
     def _clear_cal_cards(self) -> None:
         while self._cal_cards_layout.count():
@@ -458,6 +457,7 @@ class MainWindow(QMainWindow):
         self._user.theme = theme
         from remindee.ui.styles import apply_theme
         apply_theme(QApplication.instance(), theme)
+        apply_calendar_palette(self._main_calendar, theme)
 
     # ── Window events ────────────────────────────────────────────────────────
 
