@@ -47,6 +47,12 @@ def main() -> None:
     window = MainWindow(user, scheduler)
     window.show()
 
+    # macOS: apply NSVisualEffectView vibrancy (frosted-glass blur).
+    # processEvents() ensures the native NSWindow exists before we touch it.
+    app.processEvents()
+    from remindee.utils.vibrancy import enable_mac_vibrancy
+    enable_mac_vibrancy(window, dark=(user.theme == "dark"))
+
     sys.exit(app.exec())
 
 

@@ -30,10 +30,9 @@ QDialog#LoginDialog {
     background: transparent;
 }
 
-/* Semi-transparent main content area — desktop bleeds through */
-QWidget#CentralWidget {
-    background: rgba(255, 248, 242, 0.80);
-}
+/* CentralWidget backdrop is painted by _GlassPanel.paintEvent (main_window.py).
+   QSS background is intentionally absent here — the custom paintEvent with
+   CompositionMode_Source is the only reliable way to write RGBA on macOS. */
 
 /* ── Sidebar — solid orange gradient ───────────────────────────── */
 QWidget#Sidebar {
@@ -150,18 +149,12 @@ QScrollBar::add-line:vertical,
 QScrollBar::sub-line:vertical { height: 0; }
 
 /* ── Reminder Card ─────────────────────────────────────────────── */
+/* Background art + border are drawn in Python ReminderCard.paintEvent.
+   Only padding is declared here so the layout has the right insets. */
 QFrame#ReminderCard {
-    background: @surface_card;
-    border: 1px solid @border_glass;
-    border-bottom: 1px solid @border;
-    border-right: 1px solid @border;
+    border: none;
     border-radius: @radius;
     padding: 2px;
-}
-
-QFrame#ReminderCard:hover {
-    background: rgba(255, 255, 255, 0.88);
-    border-color: @accent;
 }
 
 QLabel#CardTitle {

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QSize, Slot
-from PySide6.QtGui import QIcon, QAction, QPixmap
+from PySide6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -34,6 +34,38 @@ from remindee.ui.styles import apply_calendar_palette
 from remindee.utils.database import get_session
 
 _ICONS_DIR = Path(__file__).parent.parent / "resources" / "icons"
+
+
+class _GlassPanel(QWidget):
+    """
+    Semi-transparent central panel that paints its own backdrop via QPainter.
+
+    Painting directly in paintEvent (with CompositionMode_Source) is the only
+    reliable way to write RGBA pixels on macOS under WA_TranslucentBackground —
+    QSS background + palette approaches don't always honour the alpha channel
+    for plain QWidget children.
+    """
+    _COLORS: dict[str, QColor] = {
+        "light": QColor(255, 248, 242, 90),   # ~35% warm cream
+        "dark":  QColor(18,  10,  4,   110),  # ~43% warm near-black
+    }
+
+    def __init__(self, theme: str = "light", parent=None) -> None:
+        super().__init__(parent)
+        self._color = self._COLORS.get(theme, self._COLORS["light"])
+
+    def set_theme(self, theme: str) -> None:
+        self._color = self._COLORS.get(theme, self._COLORS["light"])
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        p = QPainter(self)
+        # CompositionMode_Source writes RGBA directly — no blending with what
+        # was already in the backing store, which lets the alpha channel reach
+        # the system compositor correctly.
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+        p.fillRect(self.rect(), self._color)
+        p.end()
 
 _SIDEBAR_TABS = [
     ("📅", "Today"),
@@ -104,10 +136,10 @@ class MainWindow(QMainWindow):
     # ── UI construction ──────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
-        central = QWidget()
-        central.setObjectName("CentralWidget")
-        self.setCentralWidget(central)
-        root_layout = QHBoxLayout(central)
+        self._glass_panel = _GlassPanel(self._user.theme)
+        self._glass_panel.setObjectName("CentralWidget")
+        self.setCentralWidget(self._glass_panel)
+        root_layout = QHBoxLayout(self._glass_panel)
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
 
@@ -115,6 +147,9 @@ class MainWindow(QMainWindow):
 
         self._content_stack = QStackedWidget()
         self._content_stack.setObjectName("ContentArea")
+        # Prevent QStackedWidget from filling with its palette colour —
+        # _GlassPanel.paintEvent is the sole backdrop painter.
+        self._content_stack.setAutoFillBackground(False)
         self._views = [
             self._build_list_view("Today"),
             self._build_list_view("Upcoming"),
@@ -126,7 +161,7 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(self._content_stack, stretch=1)
 
         # FAB — floating button parented to the central widget
-        self._fab = QPushButton("+", central)
+        self._fab = QPushButton("+", self._glass_panel)
         self._fab.setObjectName("FAB")
         self._fab.setFixedSize(56, 56)
         self._fab.raise_()
@@ -181,6 +216,7 @@ class MainWindow(QMainWindow):
     def _build_list_view(self, label: str) -> QWidget:
         container = QWidget()
         container.setObjectName("ContentArea")
+        container.setAutoFillBackground(False)
         outer_layout = QVBoxLayout(container)
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
@@ -192,9 +228,12 @@ class MainWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setAutoFillBackground(False)
+        scroll.viewport().setAutoFillBackground(False)
 
         scroll_content = QWidget()
         scroll_content.setObjectName("ContentArea")
+        scroll_content.setAutoFillBackground(False)
         self._cards_layout = None  # will be set per view in refresh
 
         # store the layout on the scroll_content
@@ -217,6 +256,7 @@ class MainWindow(QMainWindow):
     def _build_calendar_view(self) -> QWidget:
         container = QWidget()
         container.setObjectName("ContentArea")
+        container.setAutoFillBackground(False)
         outer = QVBoxLayout(container)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -229,9 +269,12 @@ class MainWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setAutoFillBackground(False)
+        scroll.viewport().setAutoFillBackground(False)
 
         inner = QWidget()
         inner.setObjectName("ContentArea")
+        inner.setAutoFillBackground(False)
         layout = QVBoxLayout(inner)
         layout.setContentsMargins(28, 14, 28, 90)
         layout.setSpacing(16)
@@ -459,6 +502,7 @@ class MainWindow(QMainWindow):
         from remindee.ui.styles import apply_theme
         apply_theme(QApplication.instance(), theme)
         apply_calendar_palette(self._main_calendar, theme)
+        self._glass_panel.set_theme(theme)
 
     # ── Window events ────────────────────────────────────────────────────────
 
