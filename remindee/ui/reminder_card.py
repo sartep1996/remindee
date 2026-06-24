@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import random
 from datetime import datetime
 
@@ -24,200 +25,274 @@ _FREQ_LABELS = {
 
 # ── Art palette ───────────────────────────────────────────────────────────────
 
-# Eight high-saturation (primary, secondary) colour pairs.
 _SCHEMES = [
-    (QColor(255,  55,  20), QColor(255, 195,  40)),  # 0 fire
-    (QColor( 35,  70, 230), QColor( 55, 200, 255)),  # 1 ocean
-    (QColor(175,  20, 215), QColor(255,  65, 200)),  # 2 cosmos
-    (QColor( 10, 175,  75), QColor( 45, 240, 165)),  # 3 nature
-    (QColor(255, 150,   0), QColor(225,  45,  80)),  # 4 sunset
-    (QColor(  0, 175, 210), QColor( 25,  55, 200)),  # 5 teal
-    (QColor(225,  25,  75), QColor(255, 115, 195)),  # 6 rose
-    (QColor( 75, 200,  15), QColor( 15, 115, 210)),  # 7 lime
+    (QColor(255,  40,  10), QColor(255, 195,  30)),  # 0 fire
+    (QColor( 25,  65, 240), QColor( 40, 200, 255)),  # 1 ocean
+    (QColor(170,  15, 215), QColor(255,  55, 200)),  # 2 cosmos
+    (QColor(  5, 175,  70), QColor( 35, 245, 160)),  # 3 nature
+    (QColor(255, 145,   0), QColor(225,  35,  75)),  # 4 sunset
+    (QColor(  0, 170, 215), QColor( 20,  50, 205)),  # 5 teal
+    (QColor(225,  20,  70), QColor(255, 110, 195)),  # 6 rose
+    (QColor( 70, 205,  10), QColor( 10, 110, 215)),  # 7 lime
 ]
 
-# Weighted element menu — each entry is (type_key, weight).
-# Higher weight = appears more often, but every type CAN appear on any card.
-_MENU = [
-    ("blob",     3),
-    ("rect",     3),
-    ("line",     3),
-    ("corner",   2),
-    ("triangle", 2),
-    ("stripe",   2),
-    ("dots",     2),
-    ("ring",     1),
+# Dark bases paired to each scheme
+_DARK_BASES = [
+    QColor( 22,  6,  2),   # 0 charcoal-red
+    QColor(  3,  8, 28),   # 1 deep navy
+    QColor( 16,  3, 24),   # 2 deep purple
+    QColor(  2, 18,  8),   # 3 forest black
+    QColor( 22,  8,  2),   # 4 dark amber
+    QColor(  2, 14, 22),   # 5 dark teal
+    QColor( 20,  3, 12),   # 6 dark rose
+    QColor(  5, 18,  2),   # 7 dark lime
 ]
-_TYPES   = [t for t, _ in _MENU]
-_WEIGHTS = [w for _, w in _MENU]
 
 
 def _c(col: QColor, alpha: int) -> QColor:
-    return QColor(col.red(), col.green(), col.blue(), alpha)
+    return QColor(col.red(), col.green(), col.blue(), max(0, min(255, alpha)))
 
 
-def _mix(a: QColor, b: QColor, t: float) -> QColor:
-    return QColor(
-        int(a.red()   * (1 - t) + b.red()   * t),
-        int(a.green() * (1 - t) + b.green() * t),
-        int(a.blue()  * (1 - t) + b.blue()  * t),
-    )
+# ── 8 primary style functions — each is aggressively distinct ─────────────────
 
-
-# ── Element draw functions ────────────────────────────────────────────────────
-
-def _draw_blob(p: QPainter, rect: QRectF, rng: random.Random,
-               col: QColor, alpha: int) -> None:
-    """Radial gradient circle — soft, organic."""
+def _style_mega_blob(p, rect, rng, A, B):
+    """One enormous soft blob, off-centre, covers 70-90% of the card."""
     w, h = rect.width(), rect.height()
-    cx = rect.x() + rng.uniform(-0.15, 1.15) * w
-    cy = rect.y() + rng.uniform(-0.15, 1.15) * h
-    r  = rng.uniform(0.25, 1.1) * h
-    g  = QRadialGradient(QPointF(cx, cy), r)
-    g.setColorAt(0.0, _c(col, alpha))
+    side = rng.randint(0, 3)  # 0=left 1=right 2=top 3=bottom
+    cx = (rect.x() + rng.uniform(-0.05, 0.25) * w if side == 0 else
+          rect.x() + rng.uniform(0.75, 1.05) * w if side == 1 else
+          rect.x() + rng.uniform(0.3, 0.7) * w)
+    cy = (rect.y() + rng.uniform(0.3, 0.7) * h if side < 2 else
+          rect.y() + rng.uniform(-0.1, 0.25) * h if side == 2 else
+          rect.y() + rng.uniform(0.75, 1.1) * h)
+    r   = rng.uniform(0.7, 1.15) * max(w, h)
+    col = A if rng.random() < 0.55 else B
+    g   = QRadialGradient(QPointF(cx, cy), r)
+    g.setColorAt(0.0, _c(col, rng.randint(200, 245)))
+    g.setColorAt(0.55, _c(col, rng.randint(100, 160)))
     g.setColorAt(1.0, _c(col, 0))
     p.setPen(Qt.NoPen)
     p.setBrush(QBrush(g))
     p.drawEllipse(QPointF(cx, cy), r, r)
+    # Second smaller contrasting blob
+    cx2 = rect.x() + rng.uniform(0.6, 1.0) * w
+    cy2 = rect.y() + rng.uniform(0.0, 0.5) * h
+    r2  = rng.uniform(0.25, 0.5) * h
+    g2  = QRadialGradient(QPointF(cx2, cy2), r2)
+    g2.setColorAt(0.0, _c(B, rng.randint(170, 220)))
+    g2.setColorAt(1.0, _c(B, 0))
+    p.setBrush(QBrush(g2))
+    p.drawEllipse(QPointF(cx2, cy2), r2, r2)
 
 
-def _draw_rect(p: QPainter, rect: QRectF, rng: random.Random,
-               col: QColor, alpha: int) -> None:
-    """Filled rounded-rectangle — hard geometry."""
+def _style_parallel_lines(p, rect, rng, A, B):
+    """3-5 thick parallel diagonal lines — racing stripes."""
     w, h = rect.width(), rect.height()
-    rx = rect.x() + rng.uniform(-0.1, 0.7) * w
-    ry = rect.y() + rng.uniform(-0.1, 0.7) * h
-    rw = rng.uniform(0.15, 0.7) * w
-    rh = rng.uniform(0.3,  1.3) * h
-    corner_r = rng.uniform(0, 18)
-    path = QPainterPath()
-    path.addRoundedRect(QRectF(rx, ry, rw, rh), corner_r, corner_r)
-    p.setPen(Qt.NoPen)
-    p.setBrush(_c(col, alpha))
-    p.drawPath(path)
-
-
-def _draw_line(p: QPainter, rect: QRectF, rng: random.Random,
-               col: QColor, alpha: int) -> None:
-    """Thick straight line — bold, graphic."""
-    w, h = rect.width(), rect.height()
-    # Lines always cross most of the card width for visual impact
-    x1 = rect.x() + rng.uniform(-0.05, 0.2) * w
-    y1 = rect.y() + rng.uniform(-0.3, 1.3) * h
-    x2 = rect.x() + rng.uniform(0.8, 1.05) * w
-    y2 = rect.y() + rng.uniform(-0.3, 1.3) * h
-    thickness = rng.uniform(8, 38)
-    pen = QPen(_c(col, alpha), thickness, Qt.SolidLine,
-               Qt.RoundCap, Qt.RoundJoin)
-    p.setPen(pen)
+    n     = rng.randint(3, 5)
+    thick = rng.uniform(14, 32)
+    slope = rng.uniform(-0.6, 0.6)
+    col   = A if rng.random() < 0.5 else B
+    col2  = B if col is A else A
     p.setBrush(Qt.NoBrush)
-    p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+    for i in range(n):
+        t  = (i + 0.5) / n
+        y0 = rect.y() + t * h
+        x1 = rect.x() - 0.05 * w
+        y1 = y0
+        x2 = rect.x() + 1.05 * w
+        y2 = y0 + slope * w
+        c  = col if i % 2 == 0 else col2
+        pen = QPen(_c(c, rng.randint(190, 235)), thick, Qt.SolidLine, Qt.RoundCap)
+        p.setPen(pen)
+        p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
 
 
-def _draw_corner(p: QPainter, rect: QRectF, rng: random.Random,
-                 col: QColor, alpha: int) -> None:
-    """Solid wedge radiating from a corner — strong angular fill."""
+def _style_big_rect(p, rect, rng, A, B):
+    """1-2 large solid rectangles — bold hard geometry."""
+    w, h = rect.width(), rect.height()
+    p.setPen(Qt.NoPen)
+    for i in range(rng.randint(1, 2)):
+        if rng.random() < 0.5:
+            # Tall thin slab — left or right
+            x_off = rng.uniform(-0.05, 0.6) * w
+            rw    = rng.uniform(0.2, 0.45) * w
+            rh    = rng.uniform(0.7, 1.2) * h
+            ry    = rect.y() + rng.uniform(-0.1, 0.2) * h
+        else:
+            # Wide flat bar — top or bottom
+            x_off = rect.x() + rng.uniform(-0.1, 0.0) * w
+            rw    = rng.uniform(0.8, 1.2) * w
+            rh    = rng.uniform(0.2, 0.5) * h
+            ry    = rect.y() + rng.uniform(0, 0.7) * h
+        col  = A if i == 0 else B
+        cr   = rng.uniform(0, 14)
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(rect.x() + x_off, ry, rw, rh), cr, cr)
+        p.setBrush(_c(col, rng.randint(175, 230)))
+        p.drawPath(path)
+
+
+def _style_corner_wedge(p, rect, rng, A, B):
+    """Solid quarter-circle wedge from a random corner — huge, hard-edged."""
     w, h = rect.width(), rect.height()
     corner = rng.randint(0, 3)
     cx = rect.x() + (0 if corner in (0, 2) else w)
     cy = rect.y() + (0 if corner in (0, 1) else h)
-    r  = rng.uniform(0.45, 1.0) * max(w, h)
-    # Filled quarter-circle via arc path
-    start_angles = [0, 270, 90, 180]  # TL, TR, BL, BR (Qt degrees, CCW)
+    r  = rng.uniform(0.7, 1.1) * max(w, h)
+    starts = [0, 270, 90, 180]
+    col = A if rng.random() < 0.5 else B
     path = QPainterPath()
     path.moveTo(cx, cy)
-    path.arcTo(QRectF(cx - r, cy - r, r * 2, r * 2), start_angles[corner], 90)
+    path.arcTo(QRectF(cx - r, cy - r, r * 2, r * 2), starts[corner], 90)
     path.closeSubpath()
     p.setPen(Qt.NoPen)
-    p.setBrush(_c(col, alpha))
+    p.setBrush(_c(col, rng.randint(200, 245)))
     p.drawPath(path)
+    # Small contrasting wedge from another corner
+    corner2 = (corner + 2) % 4
+    cx2 = rect.x() + (0 if corner2 in (0, 2) else w)
+    cy2 = rect.y() + (0 if corner2 in (0, 1) else h)
+    r2  = rng.uniform(0.2, 0.45) * max(w, h)
+    path2 = QPainterPath()
+    path2.moveTo(cx2, cy2)
+    path2.arcTo(QRectF(cx2 - r2, cy2 - r2, r2 * 2, r2 * 2), starts[corner2], 90)
+    path2.closeSubpath()
+    p.setBrush(_c(B if col is A else A, rng.randint(160, 210)))
+    p.drawPath(path2)
 
 
-def _draw_triangle(p: QPainter, rect: QRectF, rng: random.Random,
-                   col: QColor, alpha: int) -> None:
-    """Large filled triangle — sharp, dramatic polygon."""
+def _style_triangle(p, rect, rng, A, B):
+    """Large filled triangle(s) — sharp, dramatic, covers most of card."""
     w, h = rect.width(), rect.height()
     ox, oy = rect.x(), rect.y()
-    pts = [
-        QPointF(ox + rng.uniform(-0.1, 0.5) * w, oy + rng.uniform(-0.2, 0.4) * h),
-        QPointF(ox + rng.uniform(0.3,  1.1) * w, oy + rng.uniform(0.5,  1.2) * h),
-        QPointF(ox + rng.uniform(0.5,  1.2) * w, oy + rng.uniform(-0.3, 0.4) * h),
+    variant = rng.randint(0, 3)
+    # Fixed-edge triangles that fill a significant portion of the card
+    triangles = [
+        ([QPointF(ox, oy), QPointF(ox + w, oy), QPointF(ox, oy + h)], A, 210),
+        ([QPointF(ox + w, oy), QPointF(ox + w, oy + h), QPointF(ox, oy + h)], B, 180),
+    ] if variant == 0 else [
+        ([QPointF(ox, oy), QPointF(ox + w * 0.55, oy), QPointF(ox, oy + h)], A, 210),
+        ([QPointF(ox + w * 0.45, oy + h), QPointF(ox + w, oy + h), QPointF(ox + w, oy)], B, 180),
+    ] if variant == 1 else [
+        ([QPointF(ox + w * 0.5, oy - h * 0.1), QPointF(ox - w * 0.1, oy + h * 1.1),
+          QPointF(ox + w * 1.1, oy + h * 1.1)], A, 215),
+    ] if variant == 2 else [
+        ([QPointF(ox, oy + h * 0.5), QPointF(ox + w, oy), QPointF(ox + w, oy + h)], A, 200),
+        ([QPointF(ox, oy), QPointF(ox + w * 0.5, oy), QPointF(ox, oy + h * 0.5)], B, 170),
     ]
-    path = QPainterPath()
-    path.addPolygon(QPolygonF(pts))
-    path.closeSubpath()
     p.setPen(Qt.NoPen)
-    p.setBrush(_c(col, alpha))
-    p.drawPath(path)
+    for pts, col, alpha in triangles:
+        path = QPainterPath()
+        path.addPolygon(QPolygonF(pts))
+        path.closeSubpath()
+        p.setBrush(_c(col, alpha))
+        p.drawPath(path)
 
 
-def _draw_stripe(p: QPainter, rect: QRectF, rng: random.Random,
-                 col: QColor, alpha: int) -> None:
-    """Diagonal parallelogram band — stripy, directional."""
+def _style_diagonal_split(p, rect, rng, A, B):
+    """Card hard-split diagonally into two solid halves — bold graphic design."""
     w, h = rect.width(), rect.height()
     ox, oy = rect.x(), rect.y()
-    band_w  = rng.uniform(0.1, 0.35) * w
-    diag    = rng.uniform(0.3, 0.8) * h * rng.choice([-1, 1])
-    x_start = ox + rng.uniform(0.0, 0.6) * w
-    path = QPainterPath()
-    path.moveTo(x_start + diag,          oy)
-    path.lineTo(x_start + band_w + diag, oy)
-    path.lineTo(x_start + band_w - diag, oy + h)
-    path.lineTo(x_start - diag,          oy + h)
-    path.closeSubpath()
+    variant = rng.randint(0, 3)
+    if variant == 0:
+        # Main diagonal: top-left triangle A, bottom-right B
+        pts_a = [QPointF(ox, oy), QPointF(ox + w, oy), QPointF(ox, oy + h)]
+        pts_b = [QPointF(ox + w, oy), QPointF(ox + w, oy + h), QPointF(ox, oy + h)]
+    elif variant == 1:
+        # Anti-diagonal: top-right A, bottom-left B
+        pts_a = [QPointF(ox, oy), QPointF(ox + w, oy), QPointF(ox + w, oy + h)]
+        pts_b = [QPointF(ox, oy), QPointF(ox + w, oy + h), QPointF(ox, oy + h)]
+    elif variant == 2:
+        # Steep diagonal — cuts at ~30/70 split
+        pts_a = [QPointF(ox, oy), QPointF(ox + w * 0.35, oy), QPointF(ox, oy + h)]
+        pts_b = [QPointF(ox + w * 0.35, oy), QPointF(ox + w, oy),
+                 QPointF(ox + w, oy + h), QPointF(ox, oy + h)]
+    else:
+        # Horizontal split with diagonal cut
+        pts_a = [QPointF(ox, oy), QPointF(ox + w, oy),
+                 QPointF(ox + w, oy + h * 0.4), QPointF(ox, oy + h * 0.6)]
+        pts_b = [QPointF(ox, oy + h * 0.6), QPointF(ox + w, oy + h * 0.4),
+                 QPointF(ox + w, oy + h), QPointF(ox, oy + h)]
     p.setPen(Qt.NoPen)
-    p.setBrush(_c(col, alpha))
-    p.drawPath(path)
+    for pts, col, alpha in [(pts_a, A, 220), (pts_b, B, 200)]:
+        path = QPainterPath()
+        path.addPolygon(QPolygonF(pts))
+        path.closeSubpath()
+        p.setBrush(_c(col, alpha))
+        p.drawPath(path)
 
 
-def _draw_dots(p: QPainter, rect: QRectF, rng: random.Random,
-               col: QColor, alpha: int) -> None:
-    """Cluster of 4–8 solid filled circles — scattered, playful."""
+def _style_dot_field(p, rect, rng, A, B):
+    """8-14 large solid circles scattered across the card — vivid dot pattern."""
     w, h = rect.width(), rect.height()
-    cluster_x = rect.x() + rng.uniform(0.1, 0.9) * w
-    cluster_y = rect.y() + rng.uniform(0.1, 0.9) * h
-    spread    = rng.uniform(0.06, 0.25) * h
-    dot_r     = rng.uniform(0.04, 0.12) * h
-    n         = rng.randint(4, 8)
+    n = rng.randint(8, 14)
     p.setPen(Qt.NoPen)
-    p.setBrush(_c(col, alpha))
-    for _ in range(n):
-        dx = rng.uniform(-spread, spread)
-        dy = rng.uniform(-spread, spread)
-        p.drawEllipse(QPointF(cluster_x + dx, cluster_y + dy), dot_r, dot_r)
+    for i in range(n):
+        cx = rect.x() + rng.uniform(-0.05, 1.05) * w
+        cy = rect.y() + rng.uniform(-0.1, 1.1) * h
+        r  = rng.uniform(0.06, 0.18) * h
+        col = A if i % 2 == 0 else B
+        p.setBrush(_c(col, rng.randint(175, 230)))
+        p.drawEllipse(QPointF(cx, cy), r, r)
 
 
-def _draw_ring(p: QPainter, rect: QRectF, rng: random.Random,
-               col: QColor, alpha: int) -> None:
-    """Hollow ring (donut) — crisp circular outline with weight."""
+def _style_ring(p, rect, rng, A, B):
+    """1-2 large rings — crisp geometric circles with thick bands."""
     w, h = rect.width(), rect.height()
-    cx = rect.x() + rng.uniform(0.0, 1.0) * w
-    cy = rect.y() + rng.uniform(0.0, 1.0) * h
-    outer = rng.uniform(0.3, 0.85) * h
-    inner = outer * rng.uniform(0.35, 0.65)
-    outer_path = QPainterPath()
-    outer_path.addEllipse(QPointF(cx, cy), outer, outer)
-    inner_path = QPainterPath()
-    inner_path.addEllipse(QPointF(cx, cy), inner, inner)
-    ring = outer_path.subtracted(inner_path)
     p.setPen(Qt.NoPen)
-    p.setBrush(_c(col, alpha))
-    p.drawPath(ring)
+    configs = [
+        (rect.x() + rng.uniform(0.1, 0.5) * w,
+         rect.y() + rng.uniform(0.1, 0.9) * h,
+         rng.uniform(0.45, 0.9) * h,
+         rng.uniform(0.4, 0.65),
+         A),
+    ]
+    if rng.random() < 0.6:
+        configs.append((
+            rect.x() + rng.uniform(0.5, 0.95) * w,
+            rect.y() + rng.uniform(0.1, 0.9) * h,
+            rng.uniform(0.25, 0.55) * h,
+            rng.uniform(0.3, 0.55),
+            B,
+        ))
+    for cx, cy, outer, inner_ratio, col in configs:
+        inner = outer * inner_ratio
+        outer_p = QPainterPath()
+        outer_p.addEllipse(QPointF(cx, cy), outer, outer)
+        inner_p = QPainterPath()
+        inner_p.addEllipse(QPointF(cx, cy), inner, inner)
+        ring = outer_p.subtracted(inner_p)
+        p.setBrush(_c(col, rng.randint(185, 240)))
+        p.drawPath(ring)
 
 
-_DRAW_FN = {
-    "blob":     _draw_blob,
-    "rect":     _draw_rect,
-    "line":     _draw_line,
-    "corner":   _draw_corner,
-    "triangle": _draw_triangle,
-    "stripe":   _draw_stripe,
-    "dots":     _draw_dots,
-    "ring":     _draw_ring,
-}
+_STYLES = [
+    _style_mega_blob,
+    _style_parallel_lines,
+    _style_big_rect,
+    _style_corner_wedge,
+    _style_triangle,
+    _style_diagonal_split,
+    _style_dot_field,
+    _style_ring,
+]
 
 
 # ── Card widget ───────────────────────────────────────────────────────────────
+
+_DARK_TEXT   = QColor(238, 222, 205)
+_DARK_TEXT2  = QColor(190, 165, 140)
+_DARK_BTN    = (
+    "QPushButton{background:transparent;border:none;border-radius:6px;"
+    "color:rgba(230,210,190,0.85);font-size:15px;padding:4px 6px;}"
+    "QPushButton:hover{background:rgba(255,255,255,0.14);color:white;}"
+)
+_DARK_BADGE  = (
+    "background:rgba(255,255,255,0.12);color:rgba(230,215,195,0.9);"
+    "border:1px solid rgba(255,255,255,0.18);border-radius:6px;"
+    "padding:2px 9px;font-size:10px;font-weight:700;"
+)
+
 
 class ReminderCard(QFrame):
     edit_requested   = Signal(object)
@@ -228,6 +303,11 @@ class ReminderCard(QFrame):
         super().__init__(parent)
         self._reminder = reminder
         self._hovered  = False
+
+        seed = (reminder.id or abs(hash(reminder.name))) & 0x7FFFFFFF
+        self._seed    = seed
+        self._is_dark = (seed * 11 + 5) % 5 == 0   # ~20% of cards are dark
+
         self.setObjectName("ReminderCard")
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setAutoFillBackground(False)
@@ -276,17 +356,36 @@ class ReminderCard(QFrame):
 
         outer.addLayout(top_row)
 
+        det = None
         if self._reminder.details:
             det = QLabel(self._reminder.details[:120])
             det.setObjectName("CardDetails")
             det.setWordWrap(True)
             outer.addWidget(det)
 
+        trig = None
         trigger_text = self._format_trigger()
         if trigger_text:
             trig = QLabel(trigger_text)
             trig.setObjectName("CardTrigger")
             outer.addWidget(trig)
+
+        if self._is_dark:
+            # Override text to light colours so labels are readable on dark bg
+            pal = title.palette()
+            pal.setColor(pal.ColorRole.WindowText, _DARK_TEXT)
+            title.setPalette(pal)
+
+            for widget in [det, trig]:
+                if widget is None:
+                    continue
+                pal2 = widget.palette()
+                pal2.setColor(pal2.ColorRole.WindowText, _DARK_TEXT2)
+                widget.setPalette(pal2)
+
+            freq_badge.setStyleSheet(_DARK_BADGE)
+            for btn in (edit_btn, done_btn, del_btn):
+                btn.setStyleSheet(_DARK_BTN)
 
     def _format_trigger(self) -> str:
         if self._reminder.frequency == FrequencyType.SPECIFIC and self._reminder.specific_datetime:
@@ -326,54 +425,50 @@ class ReminderCard(QFrame):
         clip.addRoundedRect(r, radius, radius)
         p.setClipPath(clip)
 
-        # White base
-        p.fillRect(self.rect(), QColor(255, 255, 255))
+        # Background
+        if self._is_dark:
+            p.fillRect(self.rect(), _DARK_BASES[self._seed % 8])
+        else:
+            p.fillRect(self.rect(), QColor(255, 255, 255))
 
-        # Composite art
+        # Art
         self._paint_art(p, r)
 
-        # Frosted veil keeps dark text legible over vivid art
-        p.fillPath(clip, QColor(255, 255, 255, 75))
+        # Frosted veil — light on bright cards, subtle dark on dark cards
+        veil = QColor(0, 0, 0, 55) if self._is_dark else QColor(255, 255, 255, 72)
+        p.fillPath(clip, veil)
 
         # Border
         p.setClipping(False)
-        border_alpha = 210 if self._hovered else 70
-        p.setPen(QPen(QColor(255, 107, 53, border_alpha), 1.5))
+        border_alpha = 220 if self._hovered else (100 if self._is_dark else 70)
+        border_col   = (QColor(255, 140, 80, border_alpha) if self._is_dark
+                        else QColor(255, 107, 53, border_alpha))
+        p.setPen(QPen(border_col, 1.5))
         p.setBrush(Qt.NoBrush)
         p.drawRoundedRect(r, radius, radius)
         p.end()
 
     def _paint_art(self, p: QPainter, rect: QRectF) -> None:
-        seed = (self._reminder.id or abs(hash(self._reminder.name))) & 0x7FFFFFFF
-        rng  = random.Random(seed)
-        A, B = _SCHEMES[seed % len(_SCHEMES)]
+        rng   = random.Random(self._seed)
+        A, B  = _SCHEMES[self._seed % 8]
+        style = (self._seed * 17 + 5) % len(_STYLES)
 
-        # ── Base layer (one of three types) ──────────────────────────────────
-        base = seed % 3
-        if base == 0:
-            # Solid tint of primary colour
-            p.fillRect(rect, _c(A, 35))
-        elif base == 1:
-            # Diagonal linear gradient primary → secondary
-            g = QLinearGradient(rect.topLeft(), rect.bottomRight())
-            if seed % 2:
-                g = QLinearGradient(rect.bottomLeft(), rect.topRight())
-            g.setColorAt(0.0, _c(A, 55))
-            g.setColorAt(1.0, _c(B, 45))
-            p.fillRect(rect, QBrush(g))
-        # base == 2: pure white (nothing extra)
+        # Light cards may have a tinted base gradient
+        if not self._is_dark:
+            base = self._seed % 3
+            if base == 0:
+                p.fillRect(rect, _c(A, 28))
+            elif base == 1:
+                g = QLinearGradient(
+                    rect.bottomLeft() if self._seed % 2 else rect.topLeft(),
+                    rect.topRight()   if self._seed % 2 else rect.bottomRight()
+                )
+                g.setColorAt(0.0, _c(A, 50))
+                g.setColorAt(1.0, _c(B, 38))
+                p.fillRect(rect, QBrush(g))
 
-        # ── Element layers ────────────────────────────────────────────────────
-        # Pick 5–8 elements via weighted random; each gets a colour and alpha.
-        n = rng.randint(5, 8)
-        chosen = rng.choices(_TYPES, weights=_WEIGHTS, k=n)
-
-        for elem in chosen:
-            # Alternate between primary and secondary with slight mix
-            t    = rng.uniform(0.0, 0.3)
-            col  = _mix(A, B, t) if rng.random() < 0.5 else _mix(B, A, t)
-            alpha = rng.randint(110, 225)
-            _DRAW_FN[elem](p, rect, rng, col, alpha)
+        # Primary style — large and dominant
+        _STYLES[style](p, rect, rng, A, B)
 
     # ── Refresh ───────────────────────────────────────────────────────────────
 
