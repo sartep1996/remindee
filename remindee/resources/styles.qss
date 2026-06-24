@@ -5,6 +5,7 @@
    Tokens (in resolution order):
      @bg_gradient   @surface_card  @surface_side  @surface2
      @surface       @border_glass  @border
+     @cal_nav  @cal_alt  @cal_bg
      @accent_hover  @accent
      @text2         @text
      @danger        @success       @shadow        @radius
@@ -348,41 +349,71 @@ QComboBox QAbstractItemView {
     outline: none;
 }
 
+/* Calendar — solid backgrounds are critical; transparent breaks cell rendering */
 QCalendarWidget {
-    background: @surface;
+    background: @cal_bg;
     color: @text;
     border: 1.5px solid @border;
     border-radius: 10px;
+}
+
+/* Navigation bar (month/year row) */
+QCalendarWidget QWidget#qt_calendar_navigationbar {
+    background: @cal_nav;
+    padding: 6px 4px;
 }
 
 QCalendarWidget QToolButton {
     background: transparent;
     color: @text;
     border: none;
+    border-radius: 6px;
     font-size: 13px;
-    padding: 5px 10px;
     font-weight: 600;
+    padding: 5px 10px;
+    min-width: 28px;
 }
 
 QCalendarWidget QToolButton:hover {
     background: @surface2;
-    border-radius: 6px;
     color: @accent;
 }
 
-QCalendarWidget QAbstractItemView {
+QCalendarWidget QToolButton::menu-indicator {
+    image: none;
+    width: 0;
+}
+
+/* Year spin box inside the nav bar */
+QCalendarWidget QSpinBox {
     background: transparent;
+    color: @text;
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 2px 4px;
+    selection-background-color: @accent;
+    selection-color: #ffffff;
+}
+
+QCalendarWidget QSpinBox::up-button,
+QCalendarWidget QSpinBox::down-button {
+    width: 0;
+    height: 0;
+}
+
+/* Day-of-week header row */
+QCalendarWidget QWidget { alternate-background-color: @cal_alt; }
+
+/* Date cells — must NOT be transparent */
+QCalendarWidget QAbstractItemView {
+    background: @cal_bg;
     color: @text;
     selection-background-color: @accent;
     selection-color: #ffffff;
-    alternate-background-color: transparent;
-    gridline-color: @border;
-}
-
-QCalendarWidget QWidget#qt_calendar_navigationbar {
-    background: @surface2;
-    border-radius: 8px;
-    padding: 4px;
+    alternate-background-color: @cal_alt;
+    outline: none;
+    font-size: 13px;
 }
 
 QTimeEdit {
@@ -475,9 +506,9 @@ QLabel#EmptyStateLabel {
     qproperty-alignment: AlignCenter;
 }
 
-/* ── Calendar view ─────────────────────────────────────────────── */
+/* ── Main calendar view (sidebar tab) ──────────────────────────── */
 QCalendarWidget#MainCalendar {
-    background: @surface_card;
+    background: @cal_bg;
     border: 1.5px solid @border;
     border-radius: @radius;
 }

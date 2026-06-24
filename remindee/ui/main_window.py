@@ -215,18 +215,34 @@ class MainWindow(QMainWindow):
     def _build_calendar_view(self) -> QWidget:
         container = QWidget()
         container.setObjectName("ContentArea")
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(24, 24, 24, 80)
-        layout.setSpacing(12)
+        outer = QVBoxLayout(container)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
         title = QLabel("Calendar")
         title.setObjectName("ViewTitle")
-        layout.addWidget(title)
+        outer.addWidget(title)
+
+        # Scroll area so reminder cards below the calendar don't get clipped
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        inner = QWidget()
+        inner.setObjectName("ContentArea")
+        layout = QVBoxLayout(inner)
+        layout.setContentsMargins(28, 14, 28, 90)
+        layout.setSpacing(16)
 
         self._main_calendar = QCalendarWidget()
         self._main_calendar.setObjectName("MainCalendar")
-        self._main_calendar.setGridVisible(True)
+        self._main_calendar.setGridVisible(False)
+        self._main_calendar.setVerticalHeaderFormat(
+            QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader
+        )
+        # clicked fires on direct cell click; selectionChanged also covers keyboard nav
         self._main_calendar.clicked.connect(self._on_calendar_date_clicked)
+        self._main_calendar.selectionChanged.connect(self._on_calendar_selection_changed)
         layout.addWidget(self._main_calendar)
 
         self._cal_list_label = QLabel("Select a date to see reminders")
@@ -235,8 +251,12 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._cal_list_label)
 
         self._cal_cards_layout = QVBoxLayout()
-        self._cal_cards_layout.setSpacing(8)
+        self._cal_cards_layout.setSpacing(10)
         layout.addLayout(self._cal_cards_layout)
+        layout.addStretch()
+
+        scroll.setWidget(inner)
+        outer.addWidget(scroll)
 
         container._view_label = "Calendar"
         return container
@@ -312,20 +332,21 @@ class MainWindow(QMainWindow):
             cards_layout.insertWidget(i, card)
 
     def _refresh_calendar_view(self) -> None:
-        # Clear cal cards
-        while self._cal_cards_layout.count():
-            item = self._cal_cards_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
         selected = self._main_calendar.selectedDate()
         if selected.isValid():
             self._on_calendar_date_clicked(selected)
 
-    def _on_calendar_date_clicked(self, qdate) -> None:
+    def _on_calendar_selection_changed(self) -> None:
+        self._on_calendar_date_clicked(self._main_calendar.selectedDate())
+
+    def _clear_cal_cards(self) -> None:
         while self._cal_cards_layout.count():
             item = self._cal_cards_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+
+    def _on_calendar_date_clicked(self, qdate) -> None:
+        self._clear_cal_cards()
 
         day_start = datetime(qdate.year(), qdate.month(), qdate.day())
         day_end = day_start + timedelta(days=1)

@@ -104,7 +104,10 @@ class ReminderDialog(QDialog):
         dt_layout.addWidget(self._make_label("Date"))
         self._calendar = QCalendarWidget()
         self._calendar.setGridVisible(False)
-        self._calendar.setMinimumDate(QDate.currentDate())
+        self._calendar.setVerticalHeaderFormat(
+            QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader
+        )
+        # No minimum date — past months can still be browsed; future-only validated in _save
         dt_layout.addWidget(self._calendar)
 
         dt_layout.addWidget(self._make_label("Time"))
@@ -115,7 +118,7 @@ class ReminderDialog(QDialog):
 
         self._dt_widget.setMaximumHeight(0)
         self._dt_widget.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
         layout.addWidget(self._dt_widget)
 
@@ -148,15 +151,18 @@ class ReminderDialog(QDialog):
     def _on_freq_changed(self, index: int) -> None:
         _, freq_type = _FREQ_OPTIONS[index]
         show = freq_type == FrequencyType.SPECIFIC
-        target_height = 370 if show else 0
+        # QCalendarWidget needs ~250px; add labels + time edit + spacing → 420px
+        target_height = 420 if show else 0
 
         anim = QPropertyAnimation(self._dt_widget, b"maximumHeight")
-        anim.setDuration(200)
+        anim.setDuration(250)
         anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
         anim.setStartValue(self._dt_widget.maximumHeight())
         anim.setEndValue(target_height)
+        if show:
+            anim.finished.connect(self.adjustSize)
         anim.start()
-        self._anim = anim  # keep reference
+        self._anim = anim  # keep reference alive
 
     def _populate(self) -> None:
         r = self._reminder
@@ -179,7 +185,7 @@ class ReminderDialog(QDialog):
             self._time_edit.setTime(
                 QTime(r.specific_datetime.hour, r.specific_datetime.minute)
             )
-            self._dt_widget.setMaximumHeight(370)
+            self._dt_widget.setMaximumHeight(420)
 
     def _save(self) -> None:
         name = self._name_edit.text().strip()
