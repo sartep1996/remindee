@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 
 from PySide6.QtCore import Qt, Signal, QDate, QTime, QPropertyAnimation, QEasingCurve, QRectF
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QFont, QPainter, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -36,6 +36,15 @@ _FREQ_OPTIONS = [
     ("Rarely (daily)",        FrequencyType.RARELY),
     ("Random",                FrequencyType.RANDOM),
     ("Specific Date & Time",  FrequencyType.SPECIFIC),
+]
+
+_FONT_OPTIONS = [
+    "Marker Felt",
+    "Chalkboard SE",
+    "Bradley Hand",
+    "Helvetica Neue",
+    "Georgia",
+    "Courier New",
 ]
 
 
@@ -161,7 +170,34 @@ class ReminderDialog(QDialog):
         layout.addSpacing(4)
 
         # Name
-        layout.addWidget(self._lbl("Reminder Name *"))
+        name_header = QHBoxLayout()
+        name_header.addWidget(self._lbl("Reminder Name *"))
+        name_header.addStretch()
+
+        # Font picker — compact dropdown, right-aligned in the name header
+        self._font_combo = QComboBox()
+        self._font_combo.setObjectName("FontPicker")
+        self._font_combo.setFixedWidth(160)
+        self._font_combo.setCursor(Qt.CursorShape.PointingHandCursor)
+        font_model = QStandardItemModel()
+        for f in _FONT_OPTIONS:
+            item = QStandardItem(f)
+            item.setFont(QFont(f, 13))
+            font_model.appendRow(item)
+        self._font_combo.setModel(font_model)
+        # Keep the combo's own display in the selected font
+        self._font_combo.currentIndexChanged.connect(self._on_font_changed)
+        self._on_font_changed(0)
+        if self._art_dark:
+            self._font_combo.setStyleSheet(
+                "QComboBox { background: rgba(255,255,255,0.10); border: 1.5px solid rgba(255,255,255,0.18);"
+                " border-radius: 8px; color: rgba(238,222,205,0.97); font-size: 13px; padding: 5px 10px; }"
+                "QComboBox QAbstractItemView { background: rgba(28,18,42,0.97); color: rgba(238,222,205,0.97);"
+                " selection-background-color: rgba(255,255,255,0.20); border-radius: 8px; padding: 4px; }"
+            )
+        name_header.addWidget(self._font_combo)
+        layout.addLayout(name_header)
+
         self._name_edit = QLineEdit()
         self._name_edit.setObjectName("FormInput")
         self._name_edit.setPlaceholderText("What do you want to be reminded of?")
@@ -286,6 +322,11 @@ class ReminderDialog(QDialog):
             return
         super().keyPressEvent(event)
 
+    # ── Font picker ───────────────────────────────────────────────────────────
+
+    def _on_font_changed(self, index: int) -> None:
+        self._font_combo.setFont(QFont(_FONT_OPTIONS[index], 13))
+
     # ── Date/time panel animation ─────────────────────────────────────────────
 
     def _on_freq_changed(self, index: int) -> None:
@@ -315,6 +356,12 @@ class ReminderDialog(QDialog):
             if ft == r.frequency:
                 self._freq_combo.setCurrentIndex(i)
                 break
+
+        font = (r.font_family or "Marker Felt")
+        if font in _FONT_OPTIONS:
+            idx = _FONT_OPTIONS.index(font)
+            self._font_combo.setCurrentIndex(idx)
+            self._on_font_changed(idx)
 
         if r.frequency == FrequencyType.SPECIFIC and r.specific_datetime:
             self._calendar.setSelectedDate(
@@ -361,6 +408,7 @@ class ReminderDialog(QDialog):
                 reminder.details           = details
                 reminder.frequency         = freq_type
                 reminder.specific_datetime = specific_dt
+                reminder.font_family       = self._font_combo.currentText()
                 reminder.is_done           = False
                 reminder.is_active         = True
                 session.flush()
@@ -373,6 +421,7 @@ class ReminderDialog(QDialog):
                     details            = details,
                     frequency          = freq_type,
                     specific_datetime  = specific_dt,
+                    font_family        = self._font_combo.currentText(),
                     is_active          = True,
                     is_done            = False,
                 )

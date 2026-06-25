@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
 from remindee.utils.database import init_db
@@ -20,6 +21,7 @@ def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("REMINDEE")
     app.setApplicationDisplayName("REMINDEE")
+    app.setFont(QFont("Marker Felt", 13))
     app.setQuitOnLastWindowClosed(False)
 
     # Initialize DB tables

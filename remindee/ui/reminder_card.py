@@ -5,7 +5,7 @@ from datetime import datetime
 
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import (
-    QBrush, QColor, QLinearGradient, QPainter, QPainterPath,
+    QBrush, QColor, QFont, QLinearGradient, QPainter, QPainterPath,
     QPen, QPolygonF, QRadialGradient,
 )
 from PySide6.QtWidgets import (
@@ -577,6 +577,8 @@ class ReminderCard(QFrame):
 
         title = QLabel(self._reminder.name)
         title.setObjectName("CardTitle")
+        font_family = (getattr(self._reminder, "font_family", None) or "Marker Felt")
+        title.setFont(QFont(font_family, 14))
         top_row.addWidget(title, stretch=1)
 
         freq_badge = QLabel(_FREQ_LABELS.get(self._reminder.frequency, ""))
