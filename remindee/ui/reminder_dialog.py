@@ -4,8 +4,8 @@ import random
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 
-from PySide6.QtCore import Qt, Signal, QDate, QTime, QPropertyAnimation, QEasingCurve, QPointF, QRectF
-from PySide6.QtGui import QBrush, QColor, QPainter, QRadialGradient
+from PySide6.QtCore import Qt, Signal, QDate, QTime, QPropertyAnimation, QEasingCurve, QRectF
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 from remindee.models.reminder import Reminder, FrequencyType
 from remindee.utils.database import get_session
 from remindee.ui.styles import apply_calendar_palette
-from remindee.ui.reminder_card import _SCHEMES, _c, _draw_base
+from remindee.ui.reminder_card import _SCHEMES, _DARK_BASES, _STYLES, _draw_base
 
 if TYPE_CHECKING:
     from remindee.services.scheduler_service import SchedulerService
@@ -66,10 +66,8 @@ class ReminderDialog(QDialog):
             seed = (uid * 1_337 + 42) & 0x7FFFFFFF or 5
         self._art_seed    = seed
         self._art_palette = _SCHEMES[seed % len(_SCHEMES)]
-
-        # The dialog always uses a LIGHT frosted veil so form fields remain
-        # readable regardless of the reminder's dark/light art setting.
-        self._art_rng = random.Random(seed)
+        self._art_dark    = (seed * 11 + 5) % 5 == 0   # mirrors card logic exactly
+        self._art_style   = (seed * 17 + 5) % len(_STYLES)  # same style as card
 
         self.setAutoFillBackground(False)
         self.setObjectName("ReminderDialog")
@@ -86,41 +84,55 @@ class ReminderDialog(QDialog):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        r = QRectF(self.rect())
-        A, B, *rest = self._art_palette
-        C = rest[0] if rest else A
-        D = rest[1] if len(rest) > 1 else B
+        r   = QRectF(self.rect())
+        rng = random.Random(self._art_seed)
 
-        # Solid warm white base
-        p.fillRect(r, QColor(255, 252, 248, 255))
+        # ── Base fill — matches card exactly ─────────────────────────────
+        if self._art_dark:
+            base = _DARK_BASES[self._art_seed % len(_DARK_BASES)]
+            p.fillRect(r, QColor(base.red(), base.green(), base.blue(), 255))
+        else:
+            p.fillRect(r, QColor(255, 252, 248, 255))
+            _draw_base(p, r, rng, self._art_palette, self._art_seed)
 
-        # Palette-tinted multi-stop gradient layer
-        _draw_base(p, r, random.Random(self._art_seed), self._art_palette, self._art_seed)
+        # ── Same primary style as the card ────────────────────────────────
+        _STYLES[self._art_style](p, r, rng, self._art_palette)
 
-        # Accent glow — top-right corner
-        p.setPen(Qt.NoPen)
-        cx  = r.right() - r.width()  * 0.12
-        cy  = r.top()   + r.height() * 0.20
-        gr  = max(r.width(), r.height()) * 0.58
-        g1  = QRadialGradient(cx, cy, gr)
-        g1.setColorAt(0.0, _c(A, 72))
-        g1.setColorAt(0.5, _c(B, 32))
-        g1.setColorAt(1.0, _c(A, 0))
-        p.setBrush(QBrush(g1))
-        p.drawEllipse(QPointF(cx, cy), gr, gr)
+        # ── Frosted veil — heavier than card so form fields stay readable ─
+        # Dark cards: semi-transparent black (text overridden to light in _build)
+        # Light cards: semi-transparent white
+        if self._art_dark:
+            p.fillRect(r, QColor(0, 0, 0, 148))
+        else:
+            p.fillRect(r, QColor(255, 255, 255, 168))
 
-        # Accent glow — bottom-left corner
-        cx2 = r.left()   + r.width()  * 0.08
-        cy2 = r.bottom() - r.height() * 0.14
-        gr2 = max(r.width(), r.height()) * 0.42
-        g2  = QRadialGradient(cx2, cy2, gr2)
-        g2.setColorAt(0.0, _c(D, 55))
-        g2.setColorAt(1.0, _c(D, 0))
-        p.setBrush(QBrush(g2))
-        p.drawEllipse(QPointF(cx2, cy2), gr2, gr2)
+    # ── Layout ────────────────────────────────────────────────────────────────
 
-        # Heavy white veil — keeps all form fields clearly readable
-        p.fillRect(r, QColor(255, 255, 255, 178))
+    # ── Text-colour helpers for dark cards ───────────────────────────────────
+
+    def _text_ss(self, size: int = 13, bold: bool = False) -> str:
+        """Return a stylesheet string appropriate for the current dark/light mode."""
+        if self._art_dark:
+            color = "rgba(238,222,205,0.97)"
+        else:
+            color = "#1C0800"
+        weight = "font-weight: 700;" if bold else ""
+        return f"color: {color}; font-size: {size}px; {weight}"
+
+    def _label_ss(self) -> str:
+        """FormLabel style — slightly dimmer secondary colour."""
+        if self._art_dark:
+            return "color: rgba(195,172,148,0.90); font-size: 12px; font-weight: 600; letter-spacing: 0.3px;"
+        return "color: #1C0800; font-size: 12px; font-weight: 600; letter-spacing: 0.3px;"
+
+    def _input_ss(self) -> str:
+        """Override form input background/text for dark backgrounds."""
+        if self._art_dark:
+            return (
+                "background: rgba(255,255,255,0.10); border: 1.5px solid rgba(255,255,255,0.18);"
+                "border-radius: 10px; color: rgba(238,222,205,0.97); font-size: 14px; padding: 11px 14px;"
+            )
+        return ""   # let QSS handle light mode
 
     # ── Layout ────────────────────────────────────────────────────────────────
 
@@ -134,6 +146,7 @@ class ReminderDialog(QDialog):
         # Title + palette accent bar
         title_lbl = QLabel("Edit Reminder" if self._edit_mode else "New Reminder")
         title_lbl.setObjectName("DialogTitle")
+        title_lbl.setStyleSheet(self._text_ss(size=20, bold=True))
         layout.addWidget(title_lbl)
 
         accent_bar = QLabel()
@@ -152,6 +165,7 @@ class ReminderDialog(QDialog):
         self._name_edit = QLineEdit()
         self._name_edit.setObjectName("FormInput")
         self._name_edit.setPlaceholderText("What do you want to be reminded of?")
+        self._name_edit.setStyleSheet(self._input_ss())
         # Enter in name field → save (not Qt dialog default-accept)
         self._name_edit.returnPressed.connect(self._save)
         layout.addWidget(self._name_edit)
@@ -162,6 +176,11 @@ class ReminderDialog(QDialog):
         self._details_edit.setObjectName("DetailsEdit")
         self._details_edit.setPlaceholderText("Optional notes…")
         self._details_edit.setFixedHeight(84)
+        if self._art_dark:
+            self._details_edit.setStyleSheet(
+                "background: rgba(255,255,255,0.10); border: 1.5px solid rgba(255,255,255,0.18);"
+                "border-radius: 10px; color: rgba(238,222,205,0.97); font-size: 14px; padding: 10px;"
+            )
         layout.addWidget(self._details_edit)
 
         # Frequency
@@ -171,6 +190,13 @@ class ReminderDialog(QDialog):
         for label, _ in _FREQ_OPTIONS:
             self._freq_combo.addItem(label)
         self._freq_combo.currentIndexChanged.connect(self._on_freq_changed)
+        if self._art_dark:
+            self._freq_combo.setStyleSheet(
+                "QComboBox { background: rgba(255,255,255,0.10); border: 1.5px solid rgba(255,255,255,0.18);"
+                " border-radius: 10px; color: rgba(238,222,205,0.97); font-size: 14px; padding: 10px 14px; }"
+                "QComboBox QAbstractItemView { background: rgba(28,18,42,0.97); color: rgba(238,222,205,0.97);"
+                " selection-background-color: rgba(255,255,255,0.20); border-radius: 8px; padding: 4px; }"
+            )
         layout.addWidget(self._freq_combo)
 
         # Collapsible date/time panel (shown only for Specific)
@@ -193,6 +219,11 @@ class ReminderDialog(QDialog):
         self._time_edit = QTimeEdit()
         self._time_edit.setDisplayFormat("HH:mm")
         self._time_edit.setTime(QTime.currentTime())
+        if self._art_dark:
+            self._time_edit.setStyleSheet(
+                "background: rgba(255,255,255,0.10); border: 1.5px solid rgba(255,255,255,0.18);"
+                "border-radius: 10px; color: rgba(238,222,205,0.97); font-size: 14px; padding: 9px 14px;"
+            )
         dt_layout.addWidget(self._time_edit)
 
         self._dt_widget.setMaximumHeight(0)
@@ -205,6 +236,8 @@ class ReminderDialog(QDialog):
         self._error_lbl = QLabel("")
         self._error_lbl.setObjectName("ErrorLabel")
         self._error_lbl.hide()
+        if self._art_dark:
+            self._error_lbl.setStyleSheet("color: rgba(255,120,100,0.95); font-size: 12px; font-weight: 500;")
         layout.addWidget(self._error_lbl)
 
         # Buttons
@@ -216,6 +249,11 @@ class ReminderDialog(QDialog):
         cancel_btn.setMinimumHeight(44)
         cancel_btn.setAutoDefault(False)   # must NOT steal Enter
         cancel_btn.clicked.connect(self.reject)
+        if self._art_dark:
+            cancel_btn.setStyleSheet(
+                "background: rgba(255,255,255,0.12); border: 1.5px solid rgba(255,255,255,0.22);"
+                "border-radius: 10px; color: rgba(238,222,205,0.90); font-size: 14px; padding: 12px;"
+            )
         btn_row.addWidget(cancel_btn)
 
         save_btn = QPushButton("Save Reminder")
@@ -231,6 +269,7 @@ class ReminderDialog(QDialog):
     def _lbl(self, text: str) -> QLabel:
         lbl = QLabel(text)
         lbl.setObjectName("FormLabel")
+        lbl.setStyleSheet(self._label_ss())
         return lbl
 
     # ── Keyboard ──────────────────────────────────────────────────────────────
