@@ -30,6 +30,12 @@ QDialog#LoginDialog {
     background: transparent;
 }
 
+/* ReminderDialog background is painted custom in paintEvent (gradient + veil).
+   Qt must not auto-fill here or it overrides the gradient. */
+QDialog#ReminderDialog {
+    background: transparent;
+}
+
 /* CentralWidget backdrop is painted by _GlassPanel.paintEvent (main_window.py).
    QSS background is intentionally absent here — the custom paintEvent with
    CompositionMode_Source is the only reliable way to write RGBA on macOS. */
