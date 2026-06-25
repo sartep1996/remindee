@@ -490,6 +490,7 @@ class MainWindow(QMainWindow):
         from remindee.ui.settings_dialog import SettingsDialog
         dialog = SettingsDialog(self._user, parent=self)
         dialog.theme_changed.connect(self._on_theme_changed)
+        dialog.font_changed.connect(self._on_font_changed)
         dialog.exec()
 
     @Slot(str)
@@ -503,6 +504,16 @@ class MainWindow(QMainWindow):
         apply_theme(QApplication.instance(), theme)
         apply_calendar_palette(self._main_calendar, theme)
         self._glass_panel.set_theme(theme)
+
+    @Slot(str)
+    def _on_font_changed(self, font_name: str) -> None:
+        with get_session() as session:
+            u = session.get(User, self._user.id)
+            if u:
+                u.app_font = font_name
+        self._user.app_font = font_name
+        from PySide6.QtGui import QFont
+        QApplication.instance().setFont(QFont(font_name, 13))
 
     # ── Window events ────────────────────────────────────────────────────────
 

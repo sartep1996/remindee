@@ -20,9 +20,9 @@ QMainWindow {
     background: transparent;
 }
 
-/* All dialogs: near-opaque so they stay readable */
+/* All dialogs: near-opaque, respects light/dark theme */
 QDialog {
-    background: rgba(255, 252, 248, 0.94);
+    background: @dialog_bg;
 }
 
 /* Login dialog is also WA_TranslucentBackground; glass card shows through */
@@ -546,7 +546,27 @@ QPushButton#BubbleDismissBtn:hover {
 }
 
 /* ── Settings ──────────────────────────────────────────────────── */
-/* SettingsDialog inherits from QDialog { background: rgba... } above */
+
+QPushButton#ExpandBtn {
+    background: @surface2;
+    border: 1.5px solid @border;
+    border-radius: 8px;
+    color: @text2;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 0;
+}
+
+QPushButton#ExpandBtn:hover {
+    background: @border;
+    color: @accent;
+}
+
+QPushButton#ExpandBtn:checked {
+    background: @accent;
+    border-color: @accent;
+    color: #ffffff;
+}
 
 /* ── Empty state ───────────────────────────────────────────────── */
 QLabel#EmptyStateLabel {

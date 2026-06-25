@@ -9,6 +9,7 @@ _QSS_PATH = Path(__file__).parent.parent / "resources" / "styles.qss"
 # Token order matters: longer/more-specific tokens must come before their prefixes
 _THEMES: dict[str, dict[str, str]] = {
     "light": {
+        "@dialog_bg":     "rgba(255, 252, 248, 0.97)",
         "@bg_gradient":   "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #FFF6EF, stop:1 #FFE8D0)",
         "@surface_card":  "rgba(255, 255, 255, 0.52)",   # glass card (was 0.72)
         "@surface_side":  "rgba(255, 255, 255, 0.40)",   # secondary surface
@@ -27,6 +28,7 @@ _THEMES: dict[str, dict[str, str]] = {
         "@radius":        "14px",
     },
     "dark": {
+        "@dialog_bg":     "rgba(22, 14, 8, 0.97)",
         "@bg_gradient":   "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #0D0804, stop:1 #1A0E06)",
         "@surface_card":  "rgba(255, 255, 255, 0.10)",   # glass card on dark blur
         "@surface_side":  "rgba(255, 255, 255, 0.07)",

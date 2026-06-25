@@ -52,8 +52,9 @@ def main() -> None:
         user = login.current_user
     # ── End temporary bypass ───────────────────────────────────────────────────
 
-    # Apply user's saved theme preference
+    # Apply user's saved preferences
     apply_theme(app, user.theme)
+    app.setFont(QFont(getattr(user, "app_font", None) or "Marker Felt", 13))
 
     window = MainWindow(user, scheduler)
     window.show()
