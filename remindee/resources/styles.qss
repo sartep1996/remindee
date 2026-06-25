@@ -196,10 +196,10 @@ QPushButton#CardActionBtn {
     border: none;
     border-radius: 6px;
     color: @text2;
-    font-size: 15px;
+    font-size: 19px;
     padding: 4px 6px;
-    min-width: 28px;
-    min-height: 28px;
+    min-width: 34px;
+    min-height: 34px;
 }
 
 QPushButton#CardActionBtn:hover {

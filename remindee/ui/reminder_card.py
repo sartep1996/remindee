@@ -402,7 +402,6 @@ def _style_diagonal_split(p: QPainter, rect: QRectF, rng: random.Random,
     A, B, *rest = palette
     C = rest[0] if rest else A
     w = rect.width()
-    h = rect.height()
 
     t_x = rect.left() + w * rng.uniform(0.25, 0.65)
     b_x = rect.left() + w * rng.uniform(0.25, 0.65)
@@ -538,7 +537,7 @@ _DARK_BADGE   = (
 )
 _DARK_BTN = (
     "QPushButton { background: transparent; border: none; border-radius: 6px;"
-    " color: rgba(225, 205, 185, 0.88); font-size: 15px; padding: 4px 6px; }"
+    " color: rgba(225, 205, 185, 0.88); font-size: 19px; padding: 4px 6px; }"
     "QPushButton:hover { background: rgba(255,255,255,0.15); color: white; }"
 )
 
@@ -584,23 +583,16 @@ class ReminderCard(QFrame):
         freq_badge.setObjectName("FreqBadge")
         top_row.addWidget(freq_badge)
 
-        edit_btn = QPushButton("✏")
-        edit_btn.setObjectName("CardActionBtn")
-        edit_btn.setFixedSize(30, 30)
-        edit_btn.setToolTip("Edit")
-        edit_btn.clicked.connect(lambda: self.edit_requested.emit(self._reminder))
-        top_row.addWidget(edit_btn)
-
         done_btn = QPushButton("✓")
         done_btn.setObjectName("CardActionBtn")
-        done_btn.setFixedSize(30, 30)
+        done_btn.setFixedSize(38, 38)
         done_btn.setToolTip("Mark Done")
         done_btn.clicked.connect(lambda: self.done_requested.emit(self._reminder))
         top_row.addWidget(done_btn)
 
         del_btn = QPushButton("✕")
         del_btn.setObjectName("CardActionBtn")
-        del_btn.setFixedSize(30, 30)
+        del_btn.setFixedSize(38, 38)
         del_btn.setToolTip("Delete")
         del_btn.clicked.connect(lambda: self.delete_requested.emit(self._reminder))
         top_row.addWidget(del_btn)
@@ -624,7 +616,7 @@ class ReminderCard(QFrame):
         if self._is_dark:
             title.setStyleSheet(_DARK_TEXT)
             freq_badge.setStyleSheet(_DARK_BADGE)
-            for btn in (edit_btn, done_btn, del_btn):
+            for btn in (done_btn, del_btn):
                 btn.setStyleSheet(_DARK_BTN)
             if det  is not None: det.setStyleSheet(_DARK_TEXT2)
             if trig is not None: trig.setStyleSheet(_DARK_TEXT2)
