@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import random
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -8,7 +9,7 @@ from PySide6.QtCore import (
     Qt, QTimer, QPropertyAnimation, QEasingCurve, QPoint, QRectF,
 )
 from PySide6.QtGui import (
-    QBrush, QColor, QConicalGradient, QPainter, QPainterPath, QRadialGradient,
+    QBrush, QColor, QConicalGradient, QPainter, QPainterPath,
 )
 from PySide6.QtWidgets import (
     QApplication, QDialog, QHBoxLayout, QLabel,
@@ -17,7 +18,7 @@ from PySide6.QtWidgets import (
 
 from remindee.models.reminder import Reminder
 from remindee.utils.database import get_session
-from remindee.ui.reminder_card import _SCHEMES, _DARK_BASES, _c
+from remindee.ui.reminder_card import _SCHEMES, _DARK_BASES, _STYLES, _c, _draw_base
 
 if TYPE_CHECKING:
     from remindee.services.scheduler_service import SchedulerService
@@ -93,9 +94,10 @@ class ActionBubble(QDialog):
 
         # Deterministic art tied to this reminder (same system as cards)
         seed = (reminder.id or abs(hash(reminder.name))) & 0x7FFFFFFF
-        self._seed    = seed
-        self._palette = _SCHEMES[seed % len(_SCHEMES)]
-        self._is_dark = (seed * 11 + 5) % 5 == 0
+        self._seed      = seed
+        self._palette   = _SCHEMES[seed % len(_SCHEMES)]
+        self._is_dark   = (seed * 11 + 5) % 5 == 0
+        self._art_style = (seed * 17 + 5) % len(_STYLES)
 
         # Animation state
         self._phase = 0.0   # conical gradient start-angle, degrees
@@ -225,10 +227,10 @@ class ActionBubble(QDialog):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        full   = QRectF(self.rect())
-        bw     = _BORDER_W
-        inner  = full.adjusted(bw, bw, -bw, -bw)
-        ri     = _RADIUS - bw          # inner corner radius
+        full  = QRectF(self.rect())
+        bw    = _BORDER_W
+        inner = full.adjusted(bw, bw, -bw, -bw)
+        ri    = _RADIUS - bw
         A, B, *rest = self._palette
         C = rest[0] if rest else A
         D = rest[1] if len(rest) > 1 else B
@@ -242,9 +244,9 @@ class ActionBubble(QDialog):
         cg.setColorAt(0.75, _c(D, 220))
         cg.setColorAt(1.00, _c(A, 255))
 
-        outer_path  = QPainterPath()
+        outer_path = QPainterPath()
         outer_path.addRoundedRect(full.adjusted(0.5, 0.5, -0.5, -0.5), _RADIUS, _RADIUS)
-        inner_path  = QPainterPath()
+        inner_path = QPainterPath()
         inner_path.addRoundedRect(inner, ri, ri)
         border_ring = outer_path.subtracted(inner_path)
 
@@ -252,12 +254,12 @@ class ActionBubble(QDialog):
         p.setBrush(QBrush(cg))
         p.drawPath(border_ring)
 
-        # ── 2. Inner background (opaque so widgets are readable) ──────────
+        # ── 2. Clip to inner rounded area ────────────────────────────────
         clip = QPainterPath()
         clip.addRoundedRect(inner, ri, ri)
         p.setClipPath(clip)
 
-        # Use CompositionMode_Source to write solid alpha on transparent window
+        # ── 3. Opaque base fill (CompositionMode_Source for solid alpha) ──
         p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
         if self._is_dark:
             bg = _DARK_BASES[self._seed % len(_DARK_BASES)]
@@ -266,25 +268,18 @@ class ActionBubble(QDialog):
             p.fillRect(inner, QColor(255, 252, 248, 240))
         p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
-        # ── 3. Subtle pulsing glow overlay (palette-tinted) ───────────────
-        pulse_a = int(22 + 16 * math.sin(self._pulse))
-        gx = inner.left() + inner.width()  * 0.12
-        gy = inner.top()  + inner.height() * 0.18
-        gr = max(inner.width(), inner.height()) * 1.0
-        glow = QRadialGradient(gx, gy, gr)
-        glow.setColorAt(0.0, _c(A, pulse_a + 18))
-        glow.setColorAt(0.4, _c(B, pulse_a))
-        glow.setColorAt(1.0, _c(C, max(0, pulse_a - 8)))
-        p.fillPath(clip, QBrush(glow))
+        # ── 4. Card art — same style as the matching ReminderCard ─────────
+        rng = random.Random(self._seed)
+        if not self._is_dark:
+            _draw_base(p, inner, rng, self._palette, self._seed)
+        _STYLES[self._art_style](p, inner, rng, self._palette)
 
-        # ── 4. Second glow from opposite corner (depth effect) ────────────
-        gx2 = inner.right()  - inner.width()  * 0.12
-        gy2 = inner.bottom() - inner.height() * 0.18
-        gr2 = max(inner.width(), inner.height()) * 0.7
-        glow2 = QRadialGradient(gx2, gy2, gr2)
-        glow2.setColorAt(0.0, _c(D, pulse_a + 10))
-        glow2.setColorAt(1.0, _c(D, 0))
-        p.fillPath(clip, QBrush(glow2))
+        # ── 5. Frosted veil — heavier than cards for text readability ─────
+        veil_a = int(120 + 14 * math.sin(self._pulse))   # gentle breathing
+        if self._is_dark:
+            p.fillPath(clip, QColor(0, 0, 0, veil_a))
+        else:
+            p.fillPath(clip, QColor(255, 255, 255, veil_a + 30))
 
         # painter ends automatically when it goes out of scope
 
