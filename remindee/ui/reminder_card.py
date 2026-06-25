@@ -636,6 +636,9 @@ class ReminderCard(QFrame):
 
     # ── Hover ────────────────────────────────────────────────────────────────
 
+    def mouseDoubleClickEvent(self, event) -> None:
+        self.edit_requested.emit(self._reminder)
+
     def enterEvent(self, event) -> None:
         self._hovered = True
         self.update()
