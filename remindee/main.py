@@ -6,7 +6,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
-from remindee.utils.database import init_db
+from remindee.utils.database import init_db, get_session
+from remindee.models.user import User as _User
 from remindee.services.scheduler_service import SchedulerService
 from remindee.ui.login_dialog import LoginDialog
 from remindee.ui.main_window import MainWindow
@@ -35,13 +36,21 @@ def main() -> None:
     # Connect quit signal to clean up scheduler
     app.aboutToQuit.connect(scheduler.stop)
 
-    login = LoginDialog()
-    result = login.exec()
+    # ── Temporary: skip login if a user already exists in the DB ──────────────
+    user = None
+    with get_session() as session:
+        db_user = session.query(_User).first()
+        if db_user is not None:
+            session.expunge(db_user)
+            user = db_user
 
-    if result != LoginDialog.DialogCode.Accepted or login.current_user is None:
-        sys.exit(0)
-
-    user = login.current_user
+    if user is None:
+        login = LoginDialog()
+        result = login.exec()
+        if result != LoginDialog.DialogCode.Accepted or login.current_user is None:
+            sys.exit(0)
+        user = login.current_user
+    # ── End temporary bypass ───────────────────────────────────────────────────
 
     # Apply user's saved theme preference
     apply_theme(app, user.theme)

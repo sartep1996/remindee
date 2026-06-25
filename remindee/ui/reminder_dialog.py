@@ -38,14 +38,36 @@ _FREQ_OPTIONS = [
     ("Specific Date & Time",  FrequencyType.SPECIFIC),
 ]
 
-_FONT_OPTIONS = [
-    "Marker Felt",
-    "Chalkboard SE",
-    "Bradley Hand",
-    "Helvetica Neue",
-    "Georgia",
-    "Courier New",
+_FONT_GROUPS = [
+    ("Funky & Handwritten", [
+        "Marker Felt",
+        "Chalkboard SE",
+        "Bradley Hand",
+        "Zapfino",
+        "Papyrus",
+        "Trattatello",
+        "Herculanum",
+        "Phosphate",
+    ]),
+    ("Traditional & Formal", [
+        "Times New Roman",
+        "Baskerville",
+        "Palatino",
+        "Didot",
+        "American Typewriter",
+        "Copperplate",
+        "Optima",
+        "Georgia",
+    ]),
+    ("Clean & Modern", [
+        "Helvetica Neue",
+        "Futura",
+        "Courier New",
+    ]),
 ]
+
+# Flat list of selectable font names (no headers)
+_FONT_OPTIONS = [f for _, fonts in _FONT_GROUPS for f in fonts]
 
 
 class ReminderDialog(QDialog):
@@ -180,14 +202,20 @@ class ReminderDialog(QDialog):
         self._font_combo.setFixedWidth(160)
         self._font_combo.setCursor(Qt.CursorShape.PointingHandCursor)
         font_model = QStandardItemModel()
-        for f in _FONT_OPTIONS:
-            item = QStandardItem(f)
-            item.setFont(QFont(f, 13))
-            font_model.appendRow(item)
+        for group_name, fonts in _FONT_GROUPS:
+            header = QStandardItem(f"  {group_name}")
+            header.setEnabled(False)
+            header.setFont(QFont("Helvetica Neue", 10))
+            font_model.appendRow(header)
+            for f in fonts:
+                item = QStandardItem(f"  {f}")
+                item.setFont(QFont(f, 13))
+                item.setData(f, Qt.ItemDataRole.UserRole)
+                font_model.appendRow(item)
         self._font_combo.setModel(font_model)
-        # Keep the combo's own display in the selected font
+        self._font_combo.setCurrentIndex(1)  # first real font, skip group header
         self._font_combo.currentIndexChanged.connect(self._on_font_changed)
-        self._on_font_changed(0)
+        self._on_font_changed(1)
         if self._art_dark:
             self._font_combo.setStyleSheet(
                 "QComboBox { background: rgba(255,255,255,0.10); border: 1.5px solid rgba(255,255,255,0.18);"
@@ -325,7 +353,9 @@ class ReminderDialog(QDialog):
     # ── Font picker ───────────────────────────────────────────────────────────
 
     def _on_font_changed(self, index: int) -> None:
-        self._font_combo.setFont(QFont(_FONT_OPTIONS[index], 13))
+        font_name = self._font_combo.currentData(Qt.ItemDataRole.UserRole)
+        if font_name:
+            self._font_combo.setFont(QFont(font_name, 13))
 
     # ── Date/time panel animation ─────────────────────────────────────────────
 
@@ -357,11 +387,13 @@ class ReminderDialog(QDialog):
                 self._freq_combo.setCurrentIndex(i)
                 break
 
-        font = (r.font_family or "Marker Felt")
-        if font in _FONT_OPTIONS:
-            idx = _FONT_OPTIONS.index(font)
-            self._font_combo.setCurrentIndex(idx)
-            self._on_font_changed(idx)
+        font = r.font_family or "Marker Felt"
+        model = self._font_combo.model()
+        for i in range(model.rowCount()):
+            if model.item(i) and model.item(i).data(Qt.ItemDataRole.UserRole) == font:
+                self._font_combo.setCurrentIndex(i)
+                self._on_font_changed(i)
+                break
 
         if r.frequency == FrequencyType.SPECIFIC and r.specific_datetime:
             self._calendar.setSelectedDate(
@@ -408,7 +440,7 @@ class ReminderDialog(QDialog):
                 reminder.details           = details
                 reminder.frequency         = freq_type
                 reminder.specific_datetime = specific_dt
-                reminder.font_family       = self._font_combo.currentText()
+                reminder.font_family       = (self._font_combo.currentData(Qt.ItemDataRole.UserRole) or "Marker Felt")
                 reminder.is_done           = False
                 reminder.is_active         = True
                 session.flush()
