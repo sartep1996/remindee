@@ -452,59 +452,60 @@ QTimeEdit::down-button {
 }
 
 /* ── Action Bubble ─────────────────────────────────────────────── */
+/* ActionBubble is FramelessWindowHint + WA_TranslucentBackground.
+   Background, border, and glow are all custom-painted in paintEvent.
+   Only button and label styles live here. */
 QDialog#ActionBubble {
-    background: @surface_card;
-    border: 1px solid @border_glass;
-    border-bottom: 1px solid @border;
-    border-radius: 16px;
-}
-
-QLabel#BubbleName {
-    color: @text;
-    font-size: 14px;
-    font-weight: 700;
-}
-
-QLabel#BubbleDetail {
-    color: @text2;
-    font-size: 12px;
+    background: transparent;
 }
 
 QPushButton#BubbleDoneBtn {
     background: @success;
     color: #ffffff;
     border: none;
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: 12px;
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 13px;
     font-weight: 700;
+    letter-spacing: 0.2px;
 }
 
 QPushButton#BubbleDoneBtn:hover {
     background: #1aaa44;
 }
 
+QPushButton#BubbleDoneBtn:pressed {
+    background: #148830;
+}
+
 QPushButton#BubbleSnoozeBtn {
     background: @surface2;
     color: @accent;
-    border: 1px solid @border;
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: 12px;
+    border: 1.5px solid @border;
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 13px;
     font-weight: 600;
 }
 
 QPushButton#BubbleSnoozeBtn:hover {
     background: @border;
+    color: @accent_hover;
 }
 
 QPushButton#BubbleDismissBtn {
     background: transparent;
     color: @text2;
-    border: 1px solid @border;
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: 12px;
+    border: 1.5px solid @border;
+    border-radius: 10px;
+    padding: 10px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+QPushButton#BubbleDismissBtn:hover {
+    background: @surface2;
+    color: @text;
 }
 
 /* ── Settings ──────────────────────────────────────────────────── */
