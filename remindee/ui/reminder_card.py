@@ -526,10 +526,15 @@ _STYLES = [
 ]
 
 
-# ── Dark-card text overrides ──────────────────────────────────────────────────
+# ── Card text overrides ───────────────────────────────────────────────────────
+# Dark cards (~20%): light text on near-black art
+# Light/colourful cards (~80%): dark text hard-coded so it reads in both
+#   light and dark app themes (the colourful art is always light-ish;
+#   the dark-theme @text2 token is a translucent orange that blends in).
 
 _DARK_TEXT    = "color: rgba(238, 222, 205, 0.97);"
 _DARK_TEXT2   = "color: rgba(190, 165, 140, 0.90);"
+_LIGHT_TEXT2  = "color: rgba(90, 35, 10, 0.82);"   # warm dark brown — matches light @text2
 _DARK_BADGE   = (
     "background: rgba(255,255,255,0.12); color: rgba(230,215,195,0.92);"
     "border: 1px solid rgba(255,255,255,0.18); border-radius: 6px;"
@@ -622,6 +627,9 @@ class ReminderCard(QFrame):
                 btn.setStyleSheet(_DARK_BTN)
             if det  is not None: det.setStyleSheet(_DARK_TEXT2)
             if trig is not None: trig.setStyleSheet(_DARK_TEXT2)
+        else:
+            if det  is not None: det.setStyleSheet(_LIGHT_TEXT2)
+            if trig is not None: trig.setStyleSheet(_LIGHT_TEXT2)
 
     def _format_trigger(self) -> str:
         if self._reminder.frequency == FrequencyType.SPECIFIC and self._reminder.specific_datetime:
