@@ -344,7 +344,7 @@ QComboBox#FontPicker::drop-down {
 }
 
 QComboBox#FontPicker QAbstractItemView {
-    background: rgba(255, 252, 248, 0.97);
+    background: @dialog_bg;
     border: 1px solid @border;
     color: @text;
     selection-background-color: @accent;
@@ -405,7 +405,7 @@ QComboBox#FreqCombo::down-arrow {
 }
 
 QComboBox QAbstractItemView {
-    background: rgba(255, 252, 248, 0.97);
+    background: @dialog_bg;
     border: 1px solid @border;
     color: @text;
     selection-background-color: @accent;
@@ -584,7 +584,7 @@ QCalendarWidget#MainCalendar {
 
 /* ── Global QToolTip ───────────────────────────────────────────── */
 QToolTip {
-    background: rgba(255, 252, 248, 0.96);
+    background: @dialog_bg;
     color: @text;
     border: 1px solid @border;
     border-radius: 6px;
