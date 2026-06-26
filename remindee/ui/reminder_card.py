@@ -526,15 +526,36 @@ _STYLES = [
 ]
 
 
-# ── Card text overrides ───────────────────────────────────────────────────────
-# Dark cards (~20%): light text on near-black art
-# Light/colourful cards (~80%): dark text hard-coded so it reads in both
-#   light and dark app themes (the colourful art is always light-ish;
-#   the dark-theme @text2 token is a translucent orange that blends in).
+class _OutlinedLabel(QLabel):
+    """QLabel with near-black text and a white outline.
 
-_DARK_TEXT    = "color: rgba(238, 222, 205, 0.97);"
-_DARK_TEXT2   = "color: rgba(190, 165, 140, 0.90);"
-_LIGHT_TEXT2  = "color: rgba(90, 35, 10, 0.82);"   # warm dark brown — matches light @text2
+    Achieved by drawing the text 8 times offset by 1 px in white, then once
+    in near-black on top. Handles wordWrap and alignment identically to
+    QLabel because both drawText calls use the same flags.
+    """
+    _FILL    = QColor(20, 8, 0)
+    _OUTLINE = QColor(255, 255, 255, 210)
+    _OFFSETS = ((-1, -1), (1, -1), (-1, 1), (1, 1),
+                (0, -1),  (0, 1),  (-1, 0), (1, 0))
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setFont(self.font())
+        rect  = self.contentsRect()
+        flags = int(self.alignment())
+        if self.wordWrap():
+            flags |= Qt.TextFlag.TextWordWrap
+        text = self.text()
+        p.setPen(self._OUTLINE)
+        for dx, dy in self._OFFSETS:
+            p.drawText(rect.translated(dx, dy), flags, text)
+        p.setPen(self._FILL)
+        p.drawText(rect, flags, text)
+        p.end()
+
+
+# ── Card badge / button overrides for dark-art cards ─────────────────────────
 _DARK_BADGE   = (
     "background: rgba(255,255,255,0.12); color: rgba(230,215,195,0.92);"
     "border: 1px solid rgba(255,255,255,0.18); border-radius: 6px;"
@@ -580,7 +601,7 @@ class ReminderCard(QFrame):
         top_row = QHBoxLayout()
         top_row.setSpacing(8)
 
-        title = QLabel(self._reminder.name)
+        title = _OutlinedLabel(self._reminder.name)
         title.setObjectName("CardTitle")
         font_family = (getattr(self._reminder, "font_family", None) or "Marker Felt")
         title.setFont(QFont(font_family, 14))
@@ -606,30 +627,22 @@ class ReminderCard(QFrame):
 
         outer.addLayout(top_row)
 
-        det = None
         if self._reminder.details:
-            det = QLabel(self._reminder.details[:120])
+            det = _OutlinedLabel(self._reminder.details[:120])
             det.setObjectName("CardDetails")
             det.setWordWrap(True)
             outer.addWidget(det)
 
-        trig = None
         trigger_text = self._format_trigger()
         if trigger_text:
-            trig = QLabel(trigger_text)
+            trig = _OutlinedLabel(trigger_text)
             trig.setObjectName("CardTrigger")
             outer.addWidget(trig)
 
         if self._is_dark:
-            title.setStyleSheet(_DARK_TEXT)
             freq_badge.setStyleSheet(_DARK_BADGE)
             for btn in (done_btn, del_btn):
                 btn.setStyleSheet(_DARK_BTN)
-            if det  is not None: det.setStyleSheet(_DARK_TEXT2)
-            if trig is not None: trig.setStyleSheet(_DARK_TEXT2)
-        else:
-            if det  is not None: det.setStyleSheet(_LIGHT_TEXT2)
-            if trig is not None: trig.setStyleSheet(_LIGHT_TEXT2)
 
     def _format_trigger(self) -> str:
         if self._reminder.frequency == FrequencyType.SPECIFIC and self._reminder.specific_datetime:
