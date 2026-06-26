@@ -2,10 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, date, timedelta
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
-
-from PySide6.QtCore import Qt, QSize, Slot
-from PySide6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor
+from PySide6.QtCore import Qt, Slot
+from PySide6.QtGui import QIcon, QAction, QPainter, QColor
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -18,13 +16,11 @@ from PySide6.QtWidgets import (
     QSystemTrayIcon,
     QMenu,
     QApplication,
-    QFrame,
     QCalendarWidget,
     QMessageBox,
-    QSizePolicy,
 )
 
-from remindee.models.reminder import Reminder, FrequencyType
+from remindee.models.reminder import Reminder
 from remindee.models.user import User
 from remindee.services.notification_service import NotificationService
 from remindee.services.scheduler_service import SchedulerService
@@ -46,8 +42,8 @@ class _GlassPanel(QWidget):
     for plain QWidget children.
     """
     _COLORS: dict[str, QColor] = {
-        "light": QColor(255, 248, 242, 90),   # ~35% warm cream
-        "dark":  QColor(18,  10,  4,   110),  # ~43% warm near-black
+        "light": QColor(255, 248, 242, 180),  # ~70% warm cream — dominates system vibrancy
+        "dark":  QColor(18,  10,  4,   160),  # ~63% warm near-black — better text contrast
     }
 
     def __init__(self, theme: str = "light", parent=None) -> None:
@@ -500,10 +496,12 @@ class MainWindow(QMainWindow):
             if u:
                 u.theme = theme
         self._user.theme = theme
-        from remindee.ui.styles import apply_theme
+        from remindee.ui.styles import apply_theme, _resolve_theme
         apply_theme(QApplication.instance(), theme)
         apply_calendar_palette(self._main_calendar, theme)
         self._glass_panel.set_theme(theme)
+        from remindee.utils.vibrancy import enable_mac_vibrancy
+        enable_mac_vibrancy(self, dark=(_resolve_theme(theme) == "dark"))
 
     @Slot(str)
     def _on_font_changed(self, font_name: str) -> None:
