@@ -42,8 +42,8 @@ class _GlassPanel(QWidget):
     for plain QWidget children.
     """
     _COLORS: dict[str, QColor] = {
-        "light": QColor(255, 248, 242, 180),  # ~70% warm cream — dominates system vibrancy
-        "dark":  QColor(18,  10,  4,   160),  # ~63% warm near-black — better text contrast
+        "light": QColor(255, 248, 242, 240),  # ~94% opaque warm cream — stays white regardless of OS dark mode
+        "dark":  QColor(18,  10,  4,   160),  # ~63% warm near-black — frosted dark glass
     }
 
     def __init__(self, theme: str = "light", parent=None) -> None:
