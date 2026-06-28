@@ -8,3 +8,4 @@ APScheduler>=3.10.0
 plyer>=2.1.0
 python-dotenv>=1.0.0
 platformdirs>=4.0.0
+pynput>=1.7.6

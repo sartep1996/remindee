@@ -36,6 +36,11 @@ QDialog#ReminderDialog {
     background: transparent;
 }
 
+/* QuickNoteDialog background is also fully custom-painted. */
+QDialog#QuickNoteDialog {
+    background: transparent;
+}
+
 /* CentralWidget backdrop is painted by _GlassPanel.paintEvent (main_window.py).
    QSS background is intentionally absent here — the custom paintEvent with
    CompositionMode_Source is the only reliable way to write RGBA on macOS. */

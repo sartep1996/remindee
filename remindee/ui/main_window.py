@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
-from remindee.models.reminder import Reminder
+from remindee.models.reminder import Reminder, FrequencyType
 from remindee.models.user import User
 from remindee.services.notification_service import NotificationService
 from remindee.services.scheduler_service import SchedulerService
@@ -512,6 +512,48 @@ class MainWindow(QMainWindow):
         self._user.app_font = font_name
         from PySide6.QtGui import QFont
         QApplication.instance().setFont(QFont(font_name, 13))
+
+    # ── Quick Note ───────────────────────────────────────────────────────────
+
+    @Slot()
+    def show_quick_note(self) -> None:
+        if hasattr(self, "_quick_note") and self._quick_note.isVisible():
+            self._quick_note.raise_()
+            self._quick_note.activateWindow()
+            return
+        from remindee.ui.quick_note_dialog import QuickNoteDialog
+        dlg = QuickNoteDialog()
+        dlg.save_requested.connect(self._on_quick_save)
+        dlg.reminder_requested.connect(self._on_quick_reminder)
+        self._quick_note = dlg
+        dlg.show()
+
+    @Slot(str)
+    def _on_quick_save(self, text: str) -> None:
+        with get_session() as session:
+            r = Reminder(
+                user_id      = self._user.id,
+                name         = text[:200],
+                frequency    = FrequencyType.RARELY,
+                font_family  = getattr(self._user, "app_font", None) or "Marker Felt",
+                is_active    = True,
+                is_done      = False,
+            )
+            session.add(r)
+            session.flush()
+            session.refresh(r)
+            session.expunge(r)
+        self._scheduler.schedule_reminder(r)
+        self._refresh_current_view()
+
+    @Slot(str)
+    def _on_quick_reminder(self, text: str) -> None:
+        from remindee.ui.reminder_dialog import ReminderDialog
+        dialog = ReminderDialog(
+            self._user, self._scheduler, prefill_name=text, parent=self
+        )
+        dialog.reminder_saved.connect(self._on_reminder_saved)
+        dialog.exec()
 
     # ── Window events ────────────────────────────────────────────────────────
 

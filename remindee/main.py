@@ -32,9 +32,12 @@ def main() -> None:
     apply_theme(app, "light")
 
     scheduler = SchedulerService()
+    from remindee.services.keyboard_service import KeyboardService
+    keyboard_service = KeyboardService()
 
-    # Connect quit signal to clean up scheduler
+    # Connect quit signal to clean up scheduler and keyboard listener
     app.aboutToQuit.connect(scheduler.stop)
+    app.aboutToQuit.connect(keyboard_service.stop)
 
     # ── Temporary: skip login if a user already exists in the DB ──────────────
     user = None
@@ -57,6 +60,7 @@ def main() -> None:
     app.setFont(QFont(getattr(user, "app_font", None) or "Marker Felt", 13))
 
     window = MainWindow(user, scheduler)
+    keyboard_service.quick_note_triggered.connect(window.show_quick_note)
     window.show()
 
     # macOS: apply NSVisualEffectView vibrancy (frosted-glass blur).
@@ -64,6 +68,8 @@ def main() -> None:
     app.processEvents()
     from remindee.utils.vibrancy import enable_mac_vibrancy
     enable_mac_vibrancy(window, dark=(user.theme == "dark"))
+
+    keyboard_service.start()
 
     sys.exit(app.exec())
 
