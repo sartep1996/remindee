@@ -1,116 +1,146 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPen
+import random
+from datetime import datetime
+
+from PySide6.QtCore import Qt, QRectF, Signal
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
-    QHBoxLayout,
-    QLabel,
-    QMenu,
-    QSizePolicy,
-    QVBoxLayout,
-    QWidget,
+    QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QSizePolicy, QVBoxLayout,
 )
 
-# color_label string → hex
-_COLOR_STRIP: dict[str, str] = {
-    "orange": "#FF6B35",
-    "red":    "#EF4444",
-    "green":  "#22C55E",
-    "blue":   "#3B82F6",
-    "purple": "#A855F7",
-}
+from remindee.models.note import Note
+from remindee.ui.reminder_card import (
+    _DARK_BASES, _DARK_BTN, _SCHEMES, _STYLES,
+    _OutlinedLabel, _draw_base, _draw_grain,
+)
 
 
-class NoteCard(QWidget):
-    """Compact note entry card for the notes sidebar list."""
+def _first_line(md: str) -> str:
+    """Return the first non-empty, non-header line of markdown as plain text."""
+    import re
+    for line in md.splitlines():
+        line = line.strip()
+        line = re.sub(r'^#{1,6}\s*', '', line)
+        line = re.sub(r'(\*{1,3}|_{1,3})(.*?)\1', r'\2', line)
+        line = re.sub(r'`([^`]*)`', r'\1', line)
+        if line:
+            return line
+    return ""
 
-    clicked          = Signal(int)   # note_id
-    delete_requested = Signal(int)   # note_id
-    pin_requested    = Signal(int)   # note_id
 
-    def __init__(
-        self,
-        note_id: int,
-        title: str,
-        body_preview: str,
-        is_pinned: bool = False,
-        color_label: str | None = None,
-        selected: bool = False,
-        parent=None,
-    ) -> None:
+class NoteCard(QFrame):
+    """Full-width note card with procedural art — mirrors ReminderCard style."""
+
+    edit_requested   = Signal(object)   # Note
+    delete_requested = Signal(object)   # Note
+    pin_requested    = Signal(object)   # Note
+
+    def __init__(self, note: Note, parent=None) -> None:
         super().__init__(parent)
-        self._note_id    = note_id
-        self._is_pinned  = is_pinned
-        self._color_hex  = _COLOR_STRIP.get(color_label or "", "")
-        self._selected   = selected
-        self._hovered    = False
+        self._note    = note
+        self._hovered = False
+
+        self._seed    = (note.id or abs(hash(note.title or ""))) & 0x7FFFFFFF
+        self._is_dark = (self._seed * 11 + 5) % 5 == 0
 
         self.setObjectName("NoteCard")
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setFixedHeight(76)
-        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
-        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.customContextMenuRequested.connect(self._show_context_menu)
-
-        self._build(title, body_preview)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setAutoFillBackground(False)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.setMinimumHeight(72)
+        self._build()
 
     # ── Layout ────────────────────────────────────────────────────────────────
 
-    def _build(self, title: str, body_preview: str) -> None:
-        # The left color strip is 4 px wide, handled in paintEvent.
-        # Content sits 12 px from the left (4 strip + 8 gap).
-        outer = QHBoxLayout(self)
-        outer.setContentsMargins(14, 8, 10, 8)
-        outer.setSpacing(0)
+    def _build(self) -> None:
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(16, 12, 16, 12)
+        outer.setSpacing(6)
 
-        text_col = QVBoxLayout()
-        text_col.setSpacing(3)
+        top_row = QHBoxLayout()
+        top_row.setSpacing(8)
 
-        self._title_lbl = QLabel(title or "Untitled")
-        self._title_lbl.setObjectName("NoteCardTitle")
-        self._title_lbl.setStyleSheet(
-            "font-size: 13px; font-weight: 700; background: transparent; border: none;"
-        )
-        self._title_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        if self._note.is_pinned:
+            pin_lbl = QLabel("📌")
+            pin_lbl.setStyleSheet("font-size: 13px; background: transparent;")
+            top_row.addWidget(pin_lbl)
 
-        self._preview_lbl = QLabel(body_preview or "")
-        self._preview_lbl.setObjectName("NoteCardPreview")
-        self._preview_lbl.setStyleSheet(
-            "font-size: 11px; background: transparent; border: none;"
-        )
-        self._preview_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        title_text = self._note.title or "Untitled"
+        title = _OutlinedLabel(title_text)
+        title.setObjectName("CardTitle")
+        title.setFont(QFont("Marker Felt", 14))
+        top_row.addWidget(title, stretch=1)
 
-        text_col.addWidget(self._title_lbl)
-        text_col.addWidget(self._preview_lbl)
+        edit_btn = QPushButton("✏")
+        edit_btn.setObjectName("CardActionBtn")
+        edit_btn.setFixedSize(38, 38)
+        edit_btn.setToolTip("Edit note")
+        edit_btn.clicked.connect(lambda: self.edit_requested.emit(self._note))
+        top_row.addWidget(edit_btn)
 
-        outer.addLayout(text_col, stretch=1)
+        del_btn = QPushButton("✕")
+        del_btn.setObjectName("CardActionBtn")
+        del_btn.setFixedSize(38, 38)
+        del_btn.setToolTip("Delete note")
+        del_btn.clicked.connect(lambda: self.delete_requested.emit(self._note))
+        top_row.addWidget(del_btn)
 
-        self._pin_lbl = QLabel("📌")
-        self._pin_lbl.setObjectName("NoteCardPin")
-        self._pin_lbl.setStyleSheet("font-size: 11px; background: transparent; border: none;")
-        self._pin_lbl.setVisible(self._is_pinned)
-        self._pin_lbl.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
-        outer.addWidget(self._pin_lbl, alignment=Qt.AlignmentFlag.AlignTop)
+        outer.addLayout(top_row)
 
-    # ── Public API ────────────────────────────────────────────────────────────
+        if self._note.body_md:
+            preview = _first_line(self._note.body_md)
+            if preview:
+                det = _OutlinedLabel(preview[:120])
+                det.setObjectName("CardDetails")
+                det.setWordWrap(True)
+                outer.addWidget(det)
 
-    def set_selected(self, selected: bool) -> None:
-        self._selected = selected
-        self.update()
+        # Timestamp line
+        time_str = self._format_time()
+        if time_str:
+            trig = _OutlinedLabel(time_str)
+            trig.setObjectName("CardTrigger")
+            outer.addWidget(trig)
 
-    def set_pinned(self, pinned: bool) -> None:
-        self._is_pinned = pinned
-        self._pin_lbl.setVisible(pinned)
+        if self._is_dark:
+            for btn in (edit_btn, del_btn):
+                btn.setStyleSheet(_DARK_BTN)
 
-    def note_id(self) -> int:
-        return self._note_id
+    def _format_time(self) -> str:
+        ts = self._note.updated_at or self._note.created_at
+        if ts is None:
+            return ""
+        secs = int((datetime.utcnow() - ts).total_seconds())
+        if secs < 60:
+            return "Just now"
+        if secs < 3600:
+            return f"Updated {secs // 60}m ago"
+        if secs < 86400:
+            return f"Updated {secs // 3600}h ago"
+        return f"Updated {ts.strftime('%b %d')}"
 
     # ── Events ────────────────────────────────────────────────────────────────
 
+    def mouseDoubleClickEvent(self, event) -> None:
+        self.edit_requested.emit(self._note)
+
     def mousePressEvent(self, event) -> None:
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self._note_id)
+        if event.button() == Qt.MouseButton.RightButton:
+            self._show_context_menu(event.globalPosition().toPoint())
         super().mousePressEvent(event)
+
+    def _show_context_menu(self, global_pos) -> None:
+        menu = QMenu(self)
+        pin_text = "Unpin" if self._note.is_pinned else "Pin"
+        pin_action = menu.addAction(pin_text)
+        menu.addSeparator()
+        del_action = menu.addAction("Delete")
+        action = menu.exec(global_pos)
+        if action == pin_action:
+            self.pin_requested.emit(self._note)
+        elif action == del_action:
+            self.delete_requested.emit(self._note)
 
     def enterEvent(self, event) -> None:
         self._hovered = True
@@ -122,42 +152,62 @@ class NoteCard(QWidget):
         self.update()
         super().leaveEvent(event)
 
-    def _show_context_menu(self, pos) -> None:
-        menu = QMenu(self)
-        pin_text = "Unpin" if self._is_pinned else "Pin"
-        pin_action = menu.addAction(pin_text)
-        menu.addSeparator()
-        del_action = menu.addAction("Delete")
-        action = menu.exec(self.mapToGlobal(pos))
-        if action == pin_action:
-            self.pin_requested.emit(self._note_id)
-        elif action == del_action:
-            self.delete_requested.emit(self._note_id)
-
-    # ── Painting ──────────────────────────────────────────────────────────────
+    # ── Painting ─────────────────────────────────────────────────────────────
 
     def paintEvent(self, event) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        rect = self.rect()
+        r      = QRectF(self.rect()).adjusted(1.0, 1.0, -1.0, -1.0)
+        radius = 14.0
 
-        # Selection / hover tint — drawn as the card background.
-        # We let QSS handle the base background via objectName "NoteCard",
-        # but we add a subtle overlay here for hover/selection.
-        if self._selected:
-            p.fillRect(rect, QColor(255, 107, 53, 28))
-            p.setPen(QPen(QColor(255, 107, 53, 120), 1))
-            p.drawRect(rect.adjusted(0, 0, -1, -1))
-        elif self._hovered:
-            p.fillRect(rect, QColor(255, 107, 53, 12))
+        clip = QPainterPath()
+        clip.addRoundedRect(r, radius, radius)
+        p.setClipPath(clip)
 
-        # Left color strip
-        if self._color_hex:
-            strip_color = QColor(self._color_hex)
-            p.fillRect(0, 0, 4, rect.height(), strip_color)
+        if self._is_dark:
+            p.fillRect(self.rect(), _DARK_BASES[self._seed % len(_DARK_BASES)])
         else:
-            # Transparent placeholder — just a subtle border
-            p.fillRect(0, 0, 4, rect.height(), QColor(0, 0, 0, 0))
+            p.fillRect(self.rect(), QColor(255, 255, 255))
 
-        p.end()
+        self._paint_art(p, r)
+
+        veil = QColor(0, 0, 0, 55) if self._is_dark else QColor(255, 255, 255, 72)
+        p.fillPath(clip, veil)
+
+        p.setClipping(False)
+        border_alpha = 220 if self._hovered else (110 if self._is_dark else 70)
+        border_col = (QColor(255, 145, 90, border_alpha) if self._is_dark
+                      else QColor(255, 107, 53, border_alpha))
+        p.setPen(QPen(border_col, 1.5))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRoundedRect(r, radius, radius)
+
+    def _paint_art(self, p: QPainter, rect: QRectF) -> None:
+        rng     = random.Random(self._seed)
+        palette = _SCHEMES[self._seed % len(_SCHEMES)]
+        style   = (self._seed * 17 + 5) % len(_STYLES)
+
+        if not self._is_dark:
+            _draw_base(p, rect, rng, palette, self._seed)
+
+        _STYLES[style](p, rect, rng, palette)
+
+        if (self._seed * 3 + 1) % 5 < 2:
+            _draw_grain(p, rect, rng)
+
+    # ── Refresh ───────────────────────────────────────────────────────────────
+
+    def refresh(self, note: Note) -> None:
+        self._note    = note
+        self._seed    = (note.id or abs(hash(note.title or ""))) & 0x7FFFFFFF
+        self._is_dark = (self._seed * 11 + 5) % 5 == 0
+        old = self.layout()
+        if old:
+            while old.count():
+                item = old.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            old.deleteLater()
+        self._build()
+        self.update()

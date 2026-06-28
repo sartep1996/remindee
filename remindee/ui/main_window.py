@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QPushButton,
     QLabel,
+    QLineEdit,
     QScrollArea,
     QStackedWidget,
     QSystemTrayIcon,
@@ -28,8 +29,8 @@ from remindee.models.user import User
 from remindee.services.note_service import NoteService
 from remindee.services.notification_service import NotificationService
 from remindee.services.scheduler_service import SchedulerService
-from remindee.ui.note_editor import NoteEditor
-from remindee.ui.note_list_widget import NoteListWidget
+from remindee.ui.note_card import NoteCard
+from remindee.ui.note_dialog import NoteDialog
 from remindee.ui.reminder_card import ReminderCard
 from remindee.ui.reminder_dialog import ReminderDialog
 from remindee.ui.styles import apply_calendar_palette
@@ -308,27 +309,56 @@ class MainWindow(QMainWindow):
         return btn
 
     def _build_notes_view(self) -> QWidget:
-        """Build the split-pane Notes view: list on the left, editor on the right."""
+        """Build the notes view: scrollable card list (mirrors the reminder list views)."""
         container = QWidget()
         container.setObjectName("ContentArea")
         container.setAutoFillBackground(False)
-        layout = QHBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        outer = QVBoxLayout(container)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
-        self._note_list = NoteListWidget()
-        self._note_list.setFixedWidth(260)
-        layout.addWidget(self._note_list)
+        # Header row: title + search bar
+        header = QWidget()
+        header.setObjectName("ContentArea")
+        header.setAutoFillBackground(False)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(28, 14, 28, 4)
+        header_layout.setSpacing(12)
 
-        self._note_editor = NoteEditor()
-        layout.addWidget(self._note_editor, stretch=1)
+        title = QLabel("Notes")
+        title.setObjectName("ViewTitle")
+        header_layout.addWidget(title, stretch=1)
 
-        # Wire signals
-        self._note_list.note_selected.connect(self._on_note_selected)
-        self._note_list.search_changed.connect(self._on_note_search)
-        self._note_editor.note_saved.connect(self._on_note_saved)
-        self._note_editor.convert_to_reminder.connect(self._on_note_to_reminder)
-        self._note_editor.delete_requested.connect(self._on_note_delete_from_editor)
+        self._notes_search = QLineEdit()
+        self._notes_search.setObjectName("NoteSearch")
+        self._notes_search.setPlaceholderText("🔍 Search notes…")
+        self._notes_search.setFixedWidth(200)
+        self._notes_search.textChanged.connect(self._on_note_search)
+        header_layout.addWidget(self._notes_search)
+
+        outer.addWidget(header)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setAutoFillBackground(False)
+        scroll.viewport().setAutoFillBackground(False)
+
+        scroll_content = QWidget()
+        scroll_content.setObjectName("ContentArea")
+        scroll_content.setAutoFillBackground(False)
+
+        cards_layout = QVBoxLayout(scroll_content)
+        cards_layout.setContentsMargins(28, 14, 28, 90)
+        cards_layout.setSpacing(12)
+        cards_layout.addStretch()
+
+        scroll.setWidget(scroll_content)
+        outer.addWidget(scroll)
+
+        container._title_label  = title
+        container._cards_layout = cards_layout
+        container._view_label   = "Notes"
 
         return container
 
@@ -557,16 +587,28 @@ class MainWindow(QMainWindow):
     # ── Notes refresh ────────────────────────────────────────────────────────
 
     def _refresh_notes(self, folder_id: int | None = None) -> None:
-        """Load notes from DB into the note list widget."""
+        """Populate the notes card list from the DB."""
         if folder_id is not None:
             notes = self._note_service.get_notes_in_folder(self._user.id, folder_id)
         else:
             notes = self._note_service.get_all_notes(self._user.id)
-        self._note_list.load_notes(notes)
-        self._note_editor.clear()
+        self._populate_note_cards(notes)
+
+    def _populate_note_cards(self, notes) -> None:
+        layout = self._notes_panel._cards_layout
+        # Remove all widgets except the trailing stretch
+        while layout.count() > 1:
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        for note in notes:
+            card = NoteCard(note)
+            card.edit_requested.connect(self._on_note_edit)
+            card.delete_requested.connect(self._on_note_delete)
+            card.pin_requested.connect(self._on_note_pin)
+            layout.insertWidget(layout.count() - 1, card)
 
     def _refresh_notes_preserve_selection(self) -> None:
-        """Re-load the note list, keeping the current tab's folder filter."""
         if self._active_tab == 4:
             self._refresh_notes()
         elif self._active_tab in self._folder_tab_ids_reverse:
@@ -574,52 +616,29 @@ class MainWindow(QMainWindow):
 
     # ── Note slots ───────────────────────────────────────────────────────────
 
-    @Slot(int)
-    def _on_note_selected(self, note_id: int) -> None:
-        """Load selected note into the editor."""
-        notes = self._note_service.get_all_notes(self._user.id)
-        note = next((n for n in notes if n.id == note_id), None)
-        if note is None:
-            return
-        self._note_editor.load_note(note.id, note.title or "", note.body_md or "", note.color_label)
+    @Slot(object)
+    def _on_note_edit(self, note) -> None:
+        dlg = NoteDialog(self._user, self._note_service, note=note, parent=self)
+        dlg.note_saved.connect(self._refresh_notes_preserve_selection)
+        dlg.exec()
 
-    @Slot(int, str, str)
-    def _on_note_saved(self, note_id: int, title: str, body_md: str) -> None:
-        """Auto-save: update note in DB and refresh list."""
-        self._note_service.update_note(note_id, title=title, body_md=body_md)
-        self._refresh_notes_preserve_selection()
-
-    @Slot(int)
-    def _on_note_to_reminder(self, note_id: int) -> None:
-        """Convert note to reminder: open ReminderDialog pre-filled."""
-        notes = self._note_service.get_all_notes(self._user.id)
-        note = next((n for n in notes if n.id == note_id), None)
-        if note is None:
-            return
-        kwargs = self._note_service.note_to_reminder_kwargs(note)
-        from remindee.ui.reminder_dialog import ReminderDialog
-        dialog = ReminderDialog(
-            self._user, self._scheduler,
-            prefill_name=kwargs["prefill_name"],
-            parent=self,
-        )
-        dialog.reminder_saved.connect(self._on_reminder_saved)
-        dialog.exec()
-
-    @Slot(int)
-    def _on_note_delete_from_editor(self, note_id: int) -> None:
-        """Delete note after confirmation."""
+    @Slot(object)
+    def _on_note_delete(self, note) -> None:
         dlg = _ConfirmDialog("Delete this note?", confirm_label="Delete", parent=self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            self._note_service.delete_note(note_id)
-            self._note_editor.clear()
+            self._note_service.delete_note(note.id)
             self._refresh_notes_preserve_selection()
+
+    @Slot(object)
+    def _on_note_pin(self, note) -> None:
+        self._note_service.toggle_pin(note.id)
+        self._refresh_notes_preserve_selection()
 
     @Slot(str)
     def _on_note_search(self, query: str) -> None:
         if query.strip():
             notes = self._note_service.search_notes(self._user.id, query.strip())
-            self._note_list.load_notes(notes)
+            self._populate_note_cards(notes)
         else:
             self._refresh_notes_preserve_selection()
 
@@ -644,12 +663,12 @@ class MainWindow(QMainWindow):
     # ── CRUD actions ─────────────────────────────────────────────────────────
 
     def _on_fab_clicked(self) -> None:
-        """FAB creates a note when on a notes tab, otherwise opens ReminderDialog."""
+        """FAB opens NoteDialog on notes tabs, ReminderDialog otherwise."""
         if self._active_tab >= 4:
-            note = self._note_service.create_note(self._user.id)
-            self._refresh_notes()
-            self._note_list.select_note(note.id)
-            self._note_editor.load_note(note.id, "", "", None)
+            folder_id = self._folder_tab_ids_reverse.get(self._active_tab)
+            dlg = NoteDialog(self._user, self._note_service, folder_id=folder_id, parent=self)
+            dlg.note_saved.connect(self._refresh_notes_preserve_selection)
+            dlg.exec()
         else:
             self._open_add_dialog()
 
