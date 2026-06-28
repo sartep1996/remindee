@@ -18,13 +18,18 @@ from PySide6.QtWidgets import (
     QApplication,
     QCalendarWidget,
     QDialog,
+    QFrame,
     QSizePolicy,
 )
 
 from remindee.models.reminder import Reminder, FrequencyType
+from remindee.models.note_folder import NoteFolder
 from remindee.models.user import User
+from remindee.services.note_service import NoteService
 from remindee.services.notification_service import NotificationService
 from remindee.services.scheduler_service import SchedulerService
+from remindee.ui.note_editor import NoteEditor
+from remindee.ui.note_list_widget import NoteListWidget
 from remindee.ui.reminder_card import ReminderCard
 from remindee.ui.reminder_dialog import ReminderDialog
 from remindee.ui.styles import apply_calendar_palette
@@ -120,6 +125,11 @@ class MainWindow(QMainWindow):
         self._scheduler = scheduler
         self._active_tab = 0
 
+        # Notes state
+        self._note_service = NoteService()
+        self._folder_tab_ids: dict[int, int] = {}          # folder_id → tab_index
+        self._folder_tab_ids_reverse: dict[int, int] = {}  # tab_index → folder_id
+
         self.setWindowTitle("REMINDEE")
         self.setMinimumSize(940, 640)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -131,6 +141,11 @@ class MainWindow(QMainWindow):
 
         scheduler.start(user.id)
         self._refresh_current_view()
+
+        # Load existing folders at startup
+        folders = self._note_service.get_folders(self._user.id)
+        for folder in folders:
+            self._add_folder_tab(folder)
 
     # ── Tray ────────────────────────────────────────────────────────────────
 
@@ -196,6 +211,11 @@ class MainWindow(QMainWindow):
         ]
         for view in self._views:
             self._content_stack.addWidget(view)
+
+        # Notes view (index 4)
+        self._notes_panel = self._build_notes_view()
+        self._content_stack.addWidget(self._notes_panel)
+
         root_layout.addWidget(self._content_stack, stretch=1)
 
         # FAB — floating button parented to the central widget
@@ -203,7 +223,7 @@ class MainWindow(QMainWindow):
         self._fab.setObjectName("FAB")
         self._fab.setFixedSize(56, 56)
         self._fab.raise_()
-        self._fab.clicked.connect(self._open_add_dialog)
+        self._fab.clicked.connect(self._on_fab_clicked)
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
@@ -240,6 +260,34 @@ class MainWindow(QMainWindow):
             layout.addWidget(btn)
             self._tab_buttons.append(btn)
 
+        # ── Notes section separator ──────────────────────────────────────────
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setStyleSheet("color: rgba(255,255,255,0.30); margin: 6px 0;")
+        layout.addWidget(separator)
+
+        notes_label = QLabel("NOTES")
+        notes_label.setObjectName("SectionLabel")
+        layout.addWidget(notes_label)
+
+        # "All Notes" tab button (index 4)
+        all_notes_btn = self._make_sidebar_btn("  📝  All Notes", 4)
+        layout.addWidget(all_notes_btn)
+        self._tab_buttons.append(all_notes_btn)
+
+        # Folder container — holds per-folder buttons dynamically
+        self._sidebar_folder_container = QWidget()
+        folder_layout = QVBoxLayout(self._sidebar_folder_container)
+        folder_layout.setContentsMargins(0, 0, 0, 0)
+        folder_layout.setSpacing(2)
+        layout.addWidget(self._sidebar_folder_container)
+
+        # "+ Folder" button
+        add_folder_btn = QPushButton("  + Folder")
+        add_folder_btn.setObjectName("AddFolderBtn")
+        add_folder_btn.clicked.connect(self._on_add_folder)
+        layout.addWidget(add_folder_btn)
+
         layout.addStretch()
 
         # Settings button
@@ -250,6 +298,39 @@ class MainWindow(QMainWindow):
 
         self._update_tab_buttons(0)
         return sidebar
+
+    def _make_sidebar_btn(self, text: str, tab_index: int) -> QPushButton:
+        """Create a sidebar button that switches to tab_index when clicked."""
+        btn = QPushButton(text)
+        btn.setObjectName("SidebarBtn")
+        btn.setCheckable(False)
+        btn.clicked.connect(lambda checked, idx=tab_index: self._switch_tab(idx))
+        return btn
+
+    def _build_notes_view(self) -> QWidget:
+        """Build the split-pane Notes view: list on the left, editor on the right."""
+        container = QWidget()
+        container.setObjectName("ContentArea")
+        container.setAutoFillBackground(False)
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._note_list = NoteListWidget()
+        self._note_list.setFixedWidth(260)
+        layout.addWidget(self._note_list)
+
+        self._note_editor = NoteEditor()
+        layout.addWidget(self._note_editor, stretch=1)
+
+        # Wire signals
+        self._note_list.note_selected.connect(self._on_note_selected)
+        self._note_list.search_changed.connect(self._on_note_search)
+        self._note_editor.note_saved.connect(self._on_note_saved)
+        self._note_editor.convert_to_reminder.connect(self._on_note_to_reminder)
+        self._note_editor.delete_requested.connect(self._on_note_delete_from_editor)
+
+        return container
 
     def _build_list_view(self, label: str) -> QWidget:
         container = QWidget()
@@ -349,12 +430,23 @@ class MainWindow(QMainWindow):
 
     def _switch_tab(self, index: int) -> None:
         self._active_tab = index
-        self._content_stack.setCurrentIndex(index)
+        if index <= 3:
+            # Reminder views live at stack indices 0–3
+            self._content_stack.setCurrentIndex(index)
+            self._refresh_current_view()
+        else:
+            # Notes view is at stack index 4
+            self._content_stack.setCurrentIndex(4)
+            if index == 4:
+                self._refresh_notes()
+            elif index in self._folder_tab_ids_reverse:
+                self._refresh_notes(folder_id=self._folder_tab_ids_reverse[index])
         self._update_tab_buttons(index)
-        self._refresh_current_view()
 
     def _update_tab_buttons(self, active: int) -> None:
         for i, btn in enumerate(self._tab_buttons):
+            # _tab_buttons[0..3] → reminder tabs, [4] → All Notes,
+            # [5+] → per-folder buttons (appended in _add_folder_tab)
             btn.setProperty("active", "true" if i == active else "false")
             btn.style().unpolish(btn)
             btn.style().polish(btn)
@@ -364,8 +456,9 @@ class MainWindow(QMainWindow):
     def _refresh_current_view(self) -> None:
         if self._active_tab == 3:
             self._refresh_calendar_view()
-        else:
+        elif self._active_tab <= 3:
             self._refresh_list_view(self._active_tab)
+        # For notes tabs (≥4) refresh is triggered by _switch_tab directly
 
     def _get_reminders_for_view(self, label: str) -> list[Reminder]:
         today_start = datetime.combine(date.today(), datetime.min.time())
@@ -461,7 +554,104 @@ class MainWindow(QMainWindow):
             card.delete_requested.connect(self._delete_reminder)
             self._cal_cards_layout.addWidget(card)
 
+    # ── Notes refresh ────────────────────────────────────────────────────────
+
+    def _refresh_notes(self, folder_id: int | None = None) -> None:
+        """Load notes from DB into the note list widget."""
+        if folder_id is not None:
+            notes = self._note_service.get_notes_in_folder(self._user.id, folder_id)
+        else:
+            notes = self._note_service.get_all_notes(self._user.id)
+        self._note_list.load_notes(notes)
+        self._note_editor.clear()
+
+    def _refresh_notes_preserve_selection(self) -> None:
+        """Re-load the note list, keeping the current tab's folder filter."""
+        if self._active_tab == 4:
+            self._refresh_notes()
+        elif self._active_tab in self._folder_tab_ids_reverse:
+            self._refresh_notes(folder_id=self._folder_tab_ids_reverse[self._active_tab])
+
+    # ── Note slots ───────────────────────────────────────────────────────────
+
+    @Slot(int)
+    def _on_note_selected(self, note_id: int) -> None:
+        """Load selected note into the editor."""
+        notes = self._note_service.get_all_notes(self._user.id)
+        note = next((n for n in notes if n.id == note_id), None)
+        if note is None:
+            return
+        self._note_editor.load_note(note.id, note.title or "", note.body_md or "", note.color_label)
+
+    @Slot(int, str, str)
+    def _on_note_saved(self, note_id: int, title: str, body_md: str) -> None:
+        """Auto-save: update note in DB and refresh list."""
+        self._note_service.update_note(note_id, title=title, body_md=body_md)
+        self._refresh_notes_preserve_selection()
+
+    @Slot(int)
+    def _on_note_to_reminder(self, note_id: int) -> None:
+        """Convert note to reminder: open ReminderDialog pre-filled."""
+        notes = self._note_service.get_all_notes(self._user.id)
+        note = next((n for n in notes if n.id == note_id), None)
+        if note is None:
+            return
+        kwargs = self._note_service.note_to_reminder_kwargs(note)
+        from remindee.ui.reminder_dialog import ReminderDialog
+        dialog = ReminderDialog(
+            self._user, self._scheduler,
+            prefill_name=kwargs["prefill_name"],
+            parent=self,
+        )
+        dialog.reminder_saved.connect(self._on_reminder_saved)
+        dialog.exec()
+
+    @Slot(int)
+    def _on_note_delete_from_editor(self, note_id: int) -> None:
+        """Delete note after confirmation."""
+        dlg = _ConfirmDialog("Delete this note?", confirm_label="Delete", parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._note_service.delete_note(note_id)
+            self._note_editor.clear()
+            self._refresh_notes_preserve_selection()
+
+    @Slot(str)
+    def _on_note_search(self, query: str) -> None:
+        if query.strip():
+            notes = self._note_service.search_notes(self._user.id, query.strip())
+            self._note_list.load_notes(notes)
+        else:
+            self._refresh_notes_preserve_selection()
+
+    # ── Folder management ────────────────────────────────────────────────────
+
+    def _on_add_folder(self) -> None:
+        from PySide6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
+        if ok and name.strip():
+            folder = self._note_service.create_folder(self._user.id, name.strip())
+            self._add_folder_tab(folder)
+
+    def _add_folder_tab(self, folder: NoteFolder) -> None:
+        """Add a new folder button to the sidebar and assign a tab index."""
+        new_idx = 5 + len(self._folder_tab_ids)
+        self._folder_tab_ids[folder.id] = new_idx
+        self._folder_tab_ids_reverse[new_idx] = folder.id
+        btn = self._make_sidebar_btn(f"  📁  {folder.name}", new_idx)
+        self._sidebar_folder_container.layout().addWidget(btn)
+        self._tab_buttons.append(btn)
+
     # ── CRUD actions ─────────────────────────────────────────────────────────
+
+    def _on_fab_clicked(self) -> None:
+        """FAB creates a note when on a notes tab, otherwise opens ReminderDialog."""
+        if self._active_tab >= 4:
+            note = self._note_service.create_note(self._user.id)
+            self._refresh_notes()
+            self._note_list.select_note(note.id)
+            self._note_editor.load_note(note.id, "", "", None)
+        else:
+            self._open_add_dialog()
 
     def _open_add_dialog(self) -> None:
         dialog = ReminderDialog(self._user, self._scheduler, parent=self)
@@ -551,7 +741,7 @@ class MainWindow(QMainWindow):
         from PySide6.QtGui import QFont
         QApplication.instance().setFont(QFont(font_name, 13))
 
-    # ── Quick Note ───────────────────────────────────────────────────────────
+    # ── Quick Note (reminder) ────────────────────────────────────────────────
 
     @Slot()
     def show_quick_note(self) -> None:
@@ -600,6 +790,35 @@ class MainWindow(QMainWindow):
         )
         dialog.reminder_saved.connect(self._on_reminder_saved)
         dialog.exec()
+
+    # ── Quick Note (as Note) ─────────────────────────────────────────────────
+
+    @Slot()
+    def show_quick_note_as_note(self) -> None:
+        """Open QuickNoteDialog; saving creates a Note instead of a Reminder."""
+        if hasattr(self, "_quick_note") and self._quick_note.isVisible():
+            self._quick_note.raise_()
+            self._quick_note.activateWindow()
+            return
+        from remindee.ui.quick_note_dialog import QuickNoteDialog
+        dlg = QuickNoteDialog()
+        dlg.save_requested.connect(self._on_quick_note_save)
+        dlg.reminder_requested.connect(self._on_quick_reminder)
+        self._quick_note = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+        try:
+            from AppKit import NSApplication
+            NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        except Exception:
+            pass
+
+    @Slot(str)
+    def _on_quick_note_save(self, text: str) -> None:
+        self._note_service.create_note(self._user.id, title=text[:200])
+        if self._active_tab >= 4:
+            self._refresh_notes_preserve_selection()
 
     # ── Window events ────────────────────────────────────────────────────────
 

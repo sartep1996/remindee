@@ -6,7 +6,12 @@ from PySide6.QtCore import QObject, Signal
 
 
 class KeyboardService(QObject):
-    """Watches for R→E→M→<space>→<space> typed anywhere on the system.
+    """Watches for global key sequences typed anywhere on the system.
+
+    Monitored sequences
+    -------------------
+    R→E→M→<space>→<space>   fires ``quick_note_triggered``
+    N→O→T→<space>→<space>   fires ``note_triggered``
 
     Runs pynput's Listener in a daemon thread so Qt's event loop is never
     blocked.  Qt auto-promotes the cross-thread ``emit`` to QueuedConnection,
@@ -18,12 +23,19 @@ class KeyboardService(QObject):
     """
 
     quick_note_triggered = Signal()
+    note_triggered = Signal()
 
     _SEQ: list[str] = ["r", "e", "m", " ", " "]
+    _NOTE_SEQ: list[str] = ["n", "o", "t", " ", " "]
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._buf: list[str] = []
+        # Each entry: [expected_sequence, current_buffer, signal_to_emit]
+        # Buffers are mutable lists so they can be updated in-place.
+        self._sequences: list[tuple[list[str], list[str], Signal]] = [
+            (self._SEQ, [], self.quick_note_triggered),
+            (self._NOTE_SEQ, [], self.note_triggered),
+        ]
         self._listener = None
         self._thread: threading.Thread | None = None
         self._active = False
@@ -70,19 +82,22 @@ class KeyboardService(QObject):
             elif hasattr(key, "char") and key.char:
                 ch = key.char.lower()
             else:
-                # Modifier, arrow, function key — reset sequence
-                self._buf.clear()
+                # Modifier, arrow, function key — reset all buffers
+                for _seq, buf, _sig in self._sequences:
+                    buf.clear()
                 return
 
-            expected = self._SEQ[len(self._buf)]
-            if ch == expected:
-                self._buf.append(ch)
-                if len(self._buf) == len(self._SEQ):
-                    self._buf.clear()
-                    self.quick_note_triggered.emit()
-            else:
-                self._buf.clear()
-                if ch == self._SEQ[0]:
-                    self._buf.append(ch)
+            for seq, buf, signal in self._sequences:
+                expected = seq[len(buf)]
+                if ch == expected:
+                    buf.append(ch)
+                    if len(buf) == len(seq):
+                        buf.clear()
+                        signal.emit()
+                else:
+                    buf.clear()
+                    if ch == seq[0]:
+                        buf.append(ch)
         except Exception:
-            self._buf.clear()
+            for _seq, buf, _sig in self._sequences:
+                buf.clear()

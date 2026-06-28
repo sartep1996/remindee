@@ -621,3 +621,85 @@ QToolTip {
     padding: 4px 8px;
     font-size: 12px;
 }
+
+/* ── Notes ───────────────────────────────────────────────────────────────── */
+
+QWidget#NoteCard {
+    background: @surface;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+QWidget#NoteCard:hover {
+    background: rgba(255,107,53,0.08);
+}
+
+QLineEdit#NoteSearch {
+    background: rgba(0,0,0,0.06);
+    border: none;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 13px;
+    color: @text;
+    margin: 8px 12px;
+}
+
+QLabel#NoteListTitle {
+    color: @text;
+}
+
+QLabel#SectionLabel {
+    color: rgba(255,255,255,0.70);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 12px 0 4px 0;
+}
+
+QPushButton#AddFolderBtn {
+    background: transparent;
+    border: none;
+    color: rgba(255,255,255,0.60);
+    font-size: 12px;
+    text-align: left;
+    padding: 4px 8px;
+}
+QPushButton#AddFolderBtn:hover {
+    color: rgba(255,255,255,0.90);
+}
+
+QWidget#NoteEditor {
+    background: transparent;
+}
+
+QLineEdit#NoteTitle {
+    background: transparent;
+    border: none;
+    border-bottom: 1.5px solid rgba(255,107,53,0.3);
+    font-size: 18px;
+    font-weight: 700;
+    color: @text;
+    padding: 8px 4px;
+}
+QLineEdit#NoteTitle:focus {
+    border-bottom-color: #FF6B35;
+}
+
+QPlainTextEdit#NoteBody {
+    background: transparent;
+    border: none;
+    font-family: "Menlo", "Monaco", monospace;
+    font-size: 13px;
+    color: @text;
+    padding: 8px;
+}
+
+QTextBrowser#NotePreview {
+    background: rgba(255,255,255,0.55);
+    border: none;
+    border-left: 1px solid rgba(0,0,0,0.08);
+    padding: 8px;
+}
+
+QWidget#NoteListWidget {
+    background: @sidebar_bg;
+    border-right: 1px solid rgba(0,0,0,0.08);
+}

@@ -6,6 +6,8 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .reminder import Reminder
+    from .note_folder import NoteFolder
+    from .note import Note
 
 
 class User(Base):
@@ -28,6 +30,12 @@ class User(Base):
 
     reminders: Mapped[List["Reminder"]] = relationship(
         "Reminder", back_populates="user", cascade="all, delete-orphan"
+    )
+    note_folders: Mapped[List["NoteFolder"]] = relationship(
+        "NoteFolder", back_populates="user", cascade="all, delete-orphan"
+    )
+    notes: Mapped[List["Note"]] = relationship(
+        "Note", back_populates="user", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

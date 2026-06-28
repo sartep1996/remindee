@@ -61,6 +61,7 @@ def main() -> None:
 
     window = MainWindow(user, scheduler)
     keyboard_service.quick_note_triggered.connect(window.show_quick_note)
+    keyboard_service.note_triggered.connect(window.show_quick_note_as_note)
     window.show()
 
     # macOS: apply NSVisualEffectView vibrancy (frosted-glass blur).
