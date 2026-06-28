@@ -17,7 +17,8 @@ from PySide6.QtWidgets import (
     QMenu,
     QApplication,
     QCalendarWidget,
-    QMessageBox,
+    QDialog,
+    QSizePolicy,
 )
 
 from remindee.models.reminder import Reminder, FrequencyType
@@ -62,6 +63,47 @@ class _GlassPanel(QWidget):
         p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
         p.fillRect(self.rect(), self._color)
         p.end()
+
+class _ConfirmDialog(QDialog):
+    """Styled Yes/No dialog that respects the app's light and dark themes."""
+
+    def __init__(self, message: str, confirm_label: str = "Delete",
+                 parent=None) -> None:
+        super().__init__(parent)
+        self.setModal(True)
+        self.setMinimumWidth(300)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 22, 28, 22)
+        layout.setSpacing(20)
+
+        lbl = QLabel(message)
+        lbl.setWordWrap(True)
+        lbl.setStyleSheet("font-size: 15px; font-weight: 500;")
+        layout.addWidget(lbl)
+
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        row.addStretch()
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("SecondaryBtn")
+        cancel_btn.setMinimumHeight(38)
+        cancel_btn.setMinimumWidth(90)
+        cancel_btn.clicked.connect(self.reject)
+        row.addWidget(cancel_btn)
+
+        confirm_btn = QPushButton(confirm_label)
+        confirm_btn.setObjectName("DangerBtn")
+        confirm_btn.setMinimumHeight(38)
+        confirm_btn.setMinimumWidth(90)
+        confirm_btn.setDefault(True)
+        confirm_btn.clicked.connect(self.accept)
+        row.addWidget(confirm_btn)
+
+        layout.addLayout(row)
+
 
 _SIDEBAR_TABS = [
     ("📅", "Today"),
@@ -446,19 +488,15 @@ class MainWindow(QMainWindow):
         self._refresh_current_view()
 
     def _delete_reminder(self, reminder: Reminder) -> None:
-        reply = QMessageBox.question(
-            self,
-            "Delete Reminder",
-            f'Delete "{reminder.name}"?',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            self._scheduler.remove_reminder(reminder.id)
-            with get_session() as session:
-                r = session.get(Reminder, reminder.id)
-                if r:
-                    session.delete(r)
-            self._refresh_current_view()
+        dlg = _ConfirmDialog(f'Delete "{reminder.name}"?', parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._scheduler.remove_reminder(reminder.id)
+        with get_session() as session:
+            r = session.get(Reminder, reminder.id)
+            if r:
+                session.delete(r)
+        self._refresh_current_view()
 
     @Slot(object)
     def _on_reminder_saved(self, reminder: Reminder) -> None:

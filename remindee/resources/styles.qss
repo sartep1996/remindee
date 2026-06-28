@@ -294,6 +294,25 @@ QPushButton#PrimaryBtn:pressed {
     background: @accent;
 }
 
+QPushButton#DangerBtn {
+    background: @danger;
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 13px;
+    letter-spacing: 0.2px;
+}
+
+QPushButton#DangerBtn:hover {
+    background: #DC2626;
+}
+
+QPushButton#DangerBtn:pressed {
+    background: #B91C1C;
+}
+
 QPushButton#SecondaryBtn {
     background: @surface;
     color: @text;
