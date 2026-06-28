@@ -2,10 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, date, timedelta
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
-
-from PySide6.QtCore import Qt, QSize, Slot
-from PySide6.QtGui import QIcon, QAction, QPixmap
+from PySide6.QtCore import Qt, Slot
+from PySide6.QtGui import QIcon, QAction, QPainter, QColor
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -18,9 +16,8 @@ from PySide6.QtWidgets import (
     QSystemTrayIcon,
     QMenu,
     QApplication,
-    QFrame,
     QCalendarWidget,
-    QMessageBox,
+    QDialog,
     QSizePolicy,
 )
 
@@ -34,6 +31,79 @@ from remindee.ui.styles import apply_calendar_palette
 from remindee.utils.database import get_session
 
 _ICONS_DIR = Path(__file__).parent.parent / "resources" / "icons"
+
+
+class _GlassPanel(QWidget):
+    """
+    Semi-transparent central panel that paints its own backdrop via QPainter.
+
+    Painting directly in paintEvent (with CompositionMode_Source) is the only
+    reliable way to write RGBA pixels on macOS under WA_TranslucentBackground —
+    QSS background + palette approaches don't always honour the alpha channel
+    for plain QWidget children.
+    """
+    _COLORS: dict[str, QColor] = {
+        "light": QColor(255, 248, 242, 240),  # ~94% opaque warm cream — stays white regardless of OS dark mode
+        "dark":  QColor(18,  10,  4,   160),  # ~63% warm near-black — frosted dark glass
+    }
+
+    def __init__(self, theme: str = "light", parent=None) -> None:
+        super().__init__(parent)
+        self._color = self._COLORS.get(theme, self._COLORS["light"])
+
+    def set_theme(self, theme: str) -> None:
+        self._color = self._COLORS.get(theme, self._COLORS["light"])
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        p = QPainter(self)
+        # CompositionMode_Source writes RGBA directly — no blending with what
+        # was already in the backing store, which lets the alpha channel reach
+        # the system compositor correctly.
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+        p.fillRect(self.rect(), self._color)
+        p.end()
+
+class _ConfirmDialog(QDialog):
+    """Styled Yes/No dialog that respects the app's light and dark themes."""
+
+    def __init__(self, message: str, confirm_label: str = "Delete",
+                 parent=None) -> None:
+        super().__init__(parent)
+        self.setModal(True)
+        self.setMinimumWidth(300)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 22, 28, 22)
+        layout.setSpacing(20)
+
+        lbl = QLabel(message)
+        lbl.setObjectName("ConfirmMsg")
+        lbl.setWordWrap(True)
+        layout.addWidget(lbl)
+
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        row.addStretch()
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("SecondaryBtn")
+        cancel_btn.setMinimumHeight(38)
+        cancel_btn.setMinimumWidth(90)
+        cancel_btn.clicked.connect(self.reject)
+        row.addWidget(cancel_btn)
+
+        confirm_btn = QPushButton(confirm_label)
+        confirm_btn.setObjectName("DangerBtn")
+        confirm_btn.setMinimumHeight(38)
+        confirm_btn.setMinimumWidth(90)
+        confirm_btn.setDefault(True)
+        confirm_btn.clicked.connect(self.accept)
+        row.addWidget(confirm_btn)
+
+        layout.addLayout(row)
+
 
 _SIDEBAR_TABS = [
     ("📅", "Today"),
@@ -104,10 +174,10 @@ class MainWindow(QMainWindow):
     # ── UI construction ──────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
-        central = QWidget()
-        central.setObjectName("CentralWidget")
-        self.setCentralWidget(central)
-        root_layout = QHBoxLayout(central)
+        self._glass_panel = _GlassPanel(self._user.theme)
+        self._glass_panel.setObjectName("CentralWidget")
+        self.setCentralWidget(self._glass_panel)
+        root_layout = QHBoxLayout(self._glass_panel)
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
 
@@ -115,6 +185,9 @@ class MainWindow(QMainWindow):
 
         self._content_stack = QStackedWidget()
         self._content_stack.setObjectName("ContentArea")
+        # Prevent QStackedWidget from filling with its palette colour —
+        # _GlassPanel.paintEvent is the sole backdrop painter.
+        self._content_stack.setAutoFillBackground(False)
         self._views = [
             self._build_list_view("Today"),
             self._build_list_view("Upcoming"),
@@ -126,7 +199,7 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(self._content_stack, stretch=1)
 
         # FAB — floating button parented to the central widget
-        self._fab = QPushButton("+", central)
+        self._fab = QPushButton("+", self._glass_panel)
         self._fab.setObjectName("FAB")
         self._fab.setFixedSize(56, 56)
         self._fab.raise_()
@@ -181,6 +254,7 @@ class MainWindow(QMainWindow):
     def _build_list_view(self, label: str) -> QWidget:
         container = QWidget()
         container.setObjectName("ContentArea")
+        container.setAutoFillBackground(False)
         outer_layout = QVBoxLayout(container)
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
@@ -192,9 +266,12 @@ class MainWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setAutoFillBackground(False)
+        scroll.viewport().setAutoFillBackground(False)
 
         scroll_content = QWidget()
         scroll_content.setObjectName("ContentArea")
+        scroll_content.setAutoFillBackground(False)
         self._cards_layout = None  # will be set per view in refresh
 
         # store the layout on the scroll_content
@@ -217,6 +294,7 @@ class MainWindow(QMainWindow):
     def _build_calendar_view(self) -> QWidget:
         container = QWidget()
         container.setObjectName("ContentArea")
+        container.setAutoFillBackground(False)
         outer = QVBoxLayout(container)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -229,9 +307,12 @@ class MainWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setAutoFillBackground(False)
+        scroll.viewport().setAutoFillBackground(False)
 
         inner = QWidget()
         inner.setObjectName("ContentArea")
+        inner.setAutoFillBackground(False)
         layout = QVBoxLayout(inner)
         layout.setContentsMargins(28, 14, 28, 90)
         layout.setSpacing(16)
@@ -407,19 +488,15 @@ class MainWindow(QMainWindow):
         self._refresh_current_view()
 
     def _delete_reminder(self, reminder: Reminder) -> None:
-        reply = QMessageBox.question(
-            self,
-            "Delete Reminder",
-            f'Delete "{reminder.name}"?',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            self._scheduler.remove_reminder(reminder.id)
-            with get_session() as session:
-                r = session.get(Reminder, reminder.id)
-                if r:
-                    session.delete(r)
-            self._refresh_current_view()
+        dlg = _ConfirmDialog(f'Delete "{reminder.name}"?', parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._scheduler.remove_reminder(reminder.id)
+        with get_session() as session:
+            r = session.get(Reminder, reminder.id)
+            if r:
+                session.delete(r)
+        self._refresh_current_view()
 
     @Slot(object)
     def _on_reminder_saved(self, reminder: Reminder) -> None:
@@ -447,6 +524,7 @@ class MainWindow(QMainWindow):
         from remindee.ui.settings_dialog import SettingsDialog
         dialog = SettingsDialog(self._user, parent=self)
         dialog.theme_changed.connect(self._on_theme_changed)
+        dialog.font_changed.connect(self._on_font_changed)
         dialog.exec()
 
     @Slot(str)
@@ -456,9 +534,72 @@ class MainWindow(QMainWindow):
             if u:
                 u.theme = theme
         self._user.theme = theme
-        from remindee.ui.styles import apply_theme
+        from remindee.ui.styles import apply_theme, _resolve_theme
         apply_theme(QApplication.instance(), theme)
         apply_calendar_palette(self._main_calendar, theme)
+        self._glass_panel.set_theme(theme)
+        from remindee.utils.vibrancy import enable_mac_vibrancy
+        enable_mac_vibrancy(self, dark=(_resolve_theme(theme) == "dark"))
+
+    @Slot(str)
+    def _on_font_changed(self, font_name: str) -> None:
+        with get_session() as session:
+            u = session.get(User, self._user.id)
+            if u:
+                u.app_font = font_name
+        self._user.app_font = font_name
+        from PySide6.QtGui import QFont
+        QApplication.instance().setFont(QFont(font_name, 13))
+
+    # ── Quick Note ───────────────────────────────────────────────────────────
+
+    @Slot()
+    def show_quick_note(self) -> None:
+        if hasattr(self, "_quick_note") and self._quick_note.isVisible():
+            self._quick_note.raise_()
+            self._quick_note.activateWindow()
+            return
+        from remindee.ui.quick_note_dialog import QuickNoteDialog
+        dlg = QuickNoteDialog()
+        dlg.save_requested.connect(self._on_quick_save)
+        dlg.reminder_requested.connect(self._on_quick_reminder)
+        self._quick_note = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+        # macOS: bring REMINDEE to front so the dialog can receive key events
+        try:
+            from AppKit import NSApplication
+            NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        except Exception:
+            pass
+
+    @Slot(str)
+    def _on_quick_save(self, text: str) -> None:
+        with get_session() as session:
+            r = Reminder(
+                user_id      = self._user.id,
+                name         = text[:200],
+                frequency    = FrequencyType.RARELY,
+                font_family  = getattr(self._user, "app_font", None) or "Marker Felt",
+                is_active    = True,
+                is_done      = False,
+            )
+            session.add(r)
+            session.flush()
+            session.refresh(r)
+            session.expunge(r)
+        self._scheduler.schedule_reminder(r)
+        self._refresh_current_view()
+
+    @Slot(str)
+    def _on_quick_reminder(self, text: str) -> None:
+        from remindee.ui.reminder_dialog import ReminderDialog
+        dialog = ReminderDialog(
+            self._user, self._scheduler, prefill_name=text, parent=self
+        )
+        dialog.reminder_saved.connect(self._on_reminder_saved)
+        dialog.exec()
 
     # ── Window events ────────────────────────────────────────────────────────
 

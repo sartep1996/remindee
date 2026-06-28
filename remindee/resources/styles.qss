@@ -20,9 +20,9 @@ QMainWindow {
     background: transparent;
 }
 
-/* All dialogs: near-opaque so they stay readable */
+/* All dialogs: near-opaque, respects light/dark theme */
 QDialog {
-    background: rgba(255, 252, 248, 0.94);
+    background: @dialog_bg;
 }
 
 /* Login dialog is also WA_TranslucentBackground; glass card shows through */
@@ -30,10 +30,20 @@ QDialog#LoginDialog {
     background: transparent;
 }
 
-/* Semi-transparent main content area — desktop bleeds through */
-QWidget#CentralWidget {
-    background: rgba(255, 248, 242, 0.80);
+/* ReminderDialog background is painted custom in paintEvent (gradient + veil).
+   Qt must not auto-fill here or it overrides the gradient. */
+QDialog#ReminderDialog {
+    background: transparent;
 }
+
+/* QuickNoteDialog background is also fully custom-painted. */
+QDialog#QuickNoteDialog {
+    background: transparent;
+}
+
+/* CentralWidget backdrop is painted by _GlassPanel.paintEvent (main_window.py).
+   QSS background is intentionally absent here — the custom paintEvent with
+   CompositionMode_Source is the only reliable way to write RGBA on macOS. */
 
 /* ── Sidebar — solid orange gradient ───────────────────────────── */
 QWidget#Sidebar {
@@ -150,18 +160,12 @@ QScrollBar::add-line:vertical,
 QScrollBar::sub-line:vertical { height: 0; }
 
 /* ── Reminder Card ─────────────────────────────────────────────── */
+/* Background art + border are drawn in Python ReminderCard.paintEvent.
+   Only padding is declared here so the layout has the right insets. */
 QFrame#ReminderCard {
-    background: @surface_card;
-    border: 1px solid @border_glass;
-    border-bottom: 1px solid @border;
-    border-right: 1px solid @border;
+    border: none;
     border-radius: @radius;
     padding: 2px;
-}
-
-QFrame#ReminderCard:hover {
-    background: rgba(255, 255, 255, 0.88);
-    border-color: @accent;
 }
 
 QLabel#CardTitle {
@@ -197,10 +201,10 @@ QPushButton#CardActionBtn {
     border: none;
     border-radius: 6px;
     color: @text2;
-    font-size: 15px;
+    font-size: 19px;
     padding: 4px 6px;
-    min-width: 28px;
-    min-height: 28px;
+    min-width: 34px;
+    min-height: 34px;
 }
 
 QPushButton#CardActionBtn:hover {
@@ -290,6 +294,31 @@ QPushButton#PrimaryBtn:pressed {
     background: @accent;
 }
 
+QLabel#ConfirmMsg {
+    color: @text;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+QPushButton#DangerBtn {
+    background: @danger;
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 13px;
+    letter-spacing: 0.2px;
+}
+
+QPushButton#DangerBtn:hover {
+    background: #DC2626;
+}
+
+QPushButton#DangerBtn:pressed {
+    background: #B91C1C;
+}
+
 QPushButton#SecondaryBtn {
     background: @surface;
     color: @text;
@@ -322,6 +351,37 @@ QLabel#ErrorLabel {
     color: @danger;
     font-size: 12px;
     font-weight: 500;
+}
+
+/* ── Font picker (compact dropdown in ReminderDialog header row) ── */
+QComboBox#FontPicker {
+    background: @surface2;
+    border: 1.5px solid @border;
+    border-radius: 8px;
+    color: @text;
+    font-size: 13px;
+    padding: 5px 10px;
+    min-height: 0;
+}
+
+QComboBox#FontPicker:hover {
+    border-color: @accent;
+}
+
+QComboBox#FontPicker::drop-down {
+    border: none;
+    width: 20px;
+}
+
+QComboBox#FontPicker QAbstractItemView {
+    background: @dialog_bg;
+    border: 1px solid @border;
+    color: @text;
+    selection-background-color: @accent;
+    selection-color: #ffffff;
+    border-radius: 8px;
+    padding: 4px;
+    outline: none;
 }
 
 /* ── Reminder Dialog ───────────────────────────────────────────── */
@@ -375,7 +435,7 @@ QComboBox#FreqCombo::down-arrow {
 }
 
 QComboBox QAbstractItemView {
-    background: rgba(255, 252, 248, 0.97);
+    background: @dialog_bg;
     border: 1px solid @border;
     color: @text;
     selection-background-color: @accent;
@@ -459,63 +519,84 @@ QTimeEdit::down-button {
 }
 
 /* ── Action Bubble ─────────────────────────────────────────────── */
+/* ActionBubble is FramelessWindowHint + WA_TranslucentBackground.
+   Background, border, and glow are all custom-painted in paintEvent.
+   Only button and label styles live here. */
 QDialog#ActionBubble {
-    background: @surface_card;
-    border: 1px solid @border_glass;
-    border-bottom: 1px solid @border;
-    border-radius: 16px;
-}
-
-QLabel#BubbleName {
-    color: @text;
-    font-size: 14px;
-    font-weight: 700;
-}
-
-QLabel#BubbleDetail {
-    color: @text2;
-    font-size: 12px;
+    background: transparent;
 }
 
 QPushButton#BubbleDoneBtn {
     background: @success;
     color: #ffffff;
     border: none;
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: 12px;
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 13px;
     font-weight: 700;
+    letter-spacing: 0.2px;
 }
 
 QPushButton#BubbleDoneBtn:hover {
     background: #1aaa44;
 }
 
+QPushButton#BubbleDoneBtn:pressed {
+    background: #148830;
+}
+
 QPushButton#BubbleSnoozeBtn {
     background: @surface2;
     color: @accent;
-    border: 1px solid @border;
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: 12px;
+    border: 1.5px solid @border;
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 13px;
     font-weight: 600;
 }
 
 QPushButton#BubbleSnoozeBtn:hover {
     background: @border;
+    color: @accent_hover;
 }
 
 QPushButton#BubbleDismissBtn {
     background: transparent;
     color: @text2;
-    border: 1px solid @border;
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: 12px;
+    border: 1.5px solid @border;
+    border-radius: 10px;
+    padding: 10px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+QPushButton#BubbleDismissBtn:hover {
+    background: @surface2;
+    color: @text;
 }
 
 /* ── Settings ──────────────────────────────────────────────────── */
-/* SettingsDialog inherits from QDialog { background: rgba... } above */
+
+QPushButton#ExpandBtn {
+    background: @surface2;
+    border: 1.5px solid @border;
+    border-radius: 8px;
+    color: @text2;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 0;
+}
+
+QPushButton#ExpandBtn:hover {
+    background: @border;
+    color: @accent;
+}
+
+QPushButton#ExpandBtn:checked {
+    background: @accent;
+    border-color: @accent;
+    color: #ffffff;
+}
 
 /* ── Empty state ───────────────────────────────────────────────── */
 QLabel#EmptyStateLabel {
@@ -533,7 +614,7 @@ QCalendarWidget#MainCalendar {
 
 /* ── Global QToolTip ───────────────────────────────────────────── */
 QToolTip {
-    background: rgba(255, 252, 248, 0.96);
+    background: @dialog_bg;
     color: @text;
     border: 1px solid @border;
     border-radius: 6px;

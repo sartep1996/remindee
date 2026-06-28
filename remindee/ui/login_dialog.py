@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -12,7 +13,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QStackedWidget,
     QWidget,
-    QApplication,
 )
 
 from remindee.models.user import User
@@ -43,6 +43,8 @@ class LoginDialog(QDialog):
         self._google_auth = GoogleAuthService()
         self._oauth_thread: Optional[_OAuthThread] = None
 
+        # Login screen uses the system UI font, not the app-wide Marker Felt
+        self.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont))
         self.setWindowTitle("REMINDEE — Sign In")
         self.setMinimumWidth(440)
         self.setModal(True)

@@ -9,39 +9,41 @@ _QSS_PATH = Path(__file__).parent.parent / "resources" / "styles.qss"
 # Token order matters: longer/more-specific tokens must come before their prefixes
 _THEMES: dict[str, dict[str, str]] = {
     "light": {
+        "@dialog_bg":     "rgba(255, 252, 248, 0.97)",
         "@bg_gradient":   "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #FFF6EF, stop:1 #FFE8D0)",
-        "@surface_card":  "rgba(255, 255, 255, 0.72)",
-        "@surface_side":  "rgba(255, 255, 255, 0.60)",
+        "@surface_card":  "rgba(255, 255, 255, 0.52)",   # glass card (was 0.72)
+        "@surface_side":  "rgba(255, 255, 255, 0.40)",   # secondary surface
         "@surface2":      "rgba(255, 107, 53, 0.07)",
-        "@surface":       "rgba(255, 255, 255, 0.80)",
-        "@border_glass":  "rgba(255, 255, 255, 0.90)",
-        "@border":        "rgba(255, 107, 53, 0.18)",
+        "@surface":       "rgba(255, 255, 255, 0.65)",   # form inputs (was 0.80)
+        "@border_glass":  "rgba(255, 255, 255, 0.70)",
+        "@border":        "rgba(255, 107, 53, 0.20)",
         "@cal_nav":       "rgba(255, 107, 53, 0.08)",
         "@accent_hover":  "#E85D2A",
         "@accent":        "#FF6B35",
-        "@text2":         "#9A6040",
+        "@text2":         "#8A5030",                     # slightly darker for glass contrast
         "@text":          "#1C0800",
         "@danger":        "#EF4444",
         "@success":       "#22C55E",
-        "@shadow":        "rgba(255, 107, 53, 0.10)",
+        "@shadow":        "rgba(255, 107, 53, 0.12)",
         "@radius":        "14px",
     },
     "dark": {
+        "@dialog_bg":     "rgba(22, 14, 8, 0.97)",
         "@bg_gradient":   "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #0D0804, stop:1 #1A0E06)",
-        "@surface_card":  "rgba(255, 255, 255, 0.07)",
-        "@surface_side":  "rgba(255, 255, 255, 0.05)",
-        "@surface2":      "rgba(255, 107, 53, 0.10)",
-        "@surface":       "rgba(255, 255, 255, 0.06)",
-        "@border_glass":  "rgba(255, 255, 255, 0.10)",
-        "@border":        "rgba(255, 107, 53, 0.18)",
-        "@cal_nav":       "rgba(255, 107, 53, 0.12)",
+        "@surface_card":  "rgba(255, 255, 255, 0.10)",   # glass card on dark blur
+        "@surface_side":  "rgba(255, 255, 255, 0.07)",
+        "@surface2":      "rgba(255, 107, 53, 0.12)",
+        "@surface":       "rgba(255, 255, 255, 0.09)",   # form inputs
+        "@border_glass":  "rgba(255, 255, 255, 0.14)",
+        "@border":        "rgba(255, 107, 53, 0.22)",
+        "@cal_nav":       "rgba(255, 107, 53, 0.14)",
         "@accent_hover":  "#FF8050",
         "@accent":        "#FF6B35",
-        "@text2":         "rgba(255, 175, 120, 0.60)",
+        "@text2":         "rgba(255, 185, 130, 0.70)",
         "@text":          "rgba(255, 245, 232, 0.95)",
         "@danger":        "#FF5C5C",
         "@success":       "#4CAF50",
-        "@shadow":        "rgba(0, 0, 0, 0.30)",
+        "@shadow":        "rgba(0, 0, 0, 0.35)",
         "@radius":        "14px",
     },
 }

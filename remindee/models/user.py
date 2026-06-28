@@ -22,6 +22,7 @@ class User(Base):
     display_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     avatar_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     theme: Mapped[str] = mapped_column(String(16), default="system")
+    app_font: Mapped[str] = mapped_column(String(128), nullable=False, server_default="Marker Felt")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_login: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 

@@ -1,22 +1,24 @@
 from __future__ import annotations
 
+import math
+import random
 from datetime import datetime, timedelta
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import (
+    Qt, QTimer, QPropertyAnimation, QEasingCurve, QPoint, QRectF,
+)
+from PySide6.QtGui import (
+    QBrush, QColor, QConicalGradient, QPainter, QPainterPath,
+)
 from PySide6.QtWidgets import (
-    QSystemTrayIcon,
-    QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QApplication,
+    QApplication, QDialog, QHBoxLayout, QLabel,
+    QPushButton, QSystemTrayIcon, QVBoxLayout,
 )
 
 from remindee.models.reminder import Reminder
 from remindee.utils.database import get_session
+from remindee.ui.reminder_card import _SCHEMES, _DARK_BASES, _STYLES, _c, _draw_base
 
 if TYPE_CHECKING:
     from remindee.services.scheduler_service import SchedulerService
@@ -28,31 +30,27 @@ class NotificationService:
         tray_icon: QSystemTrayIcon,
         scheduler_service: "SchedulerService",
     ) -> None:
-        self._tray = tray_icon
+        self._tray      = tray_icon
         self._scheduler = scheduler_service
         self._active_bubbles: dict[int, "ActionBubble"] = {}
 
     def notify(self, reminder: Reminder) -> None:
-        title = "REMINDEE"
-        message = reminder.name
+        msg = reminder.name
         if reminder.details:
-            message += f"\n{reminder.details[:100]}"
-
+            msg += f"\n{reminder.details[:100]}"
         if self._tray.isSystemTrayAvailable():
-            self._tray.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 5000)
-
+            self._tray.showMessage(
+                "REMINDEE", msg,
+                QSystemTrayIcon.MessageIcon.Information, 4000,
+            )
         self.show_action_bubble(reminder)
 
     def show_action_bubble(self, reminder: Reminder) -> None:
         if reminder.id in self._active_bubbles:
             existing = self._active_bubbles[reminder.id]
-            # The Python wrapper may outlive the underlying C++ QObject if the
-            # bubble was closed and GC hasn't run yet — guard before calling any
-            # Qt method on it.
             try:
                 still_visible = existing.isVisible()
             except RuntimeError:
-                # C++ object already deleted; treat as if the bubble is gone.
                 still_visible = False
                 self._active_bubbles.pop(reminder.id, None)
             if still_visible:
@@ -67,6 +65,12 @@ class NotificationService:
         self._active_bubbles.pop(reminder_id, None)
 
 
+# ── Animated notification bubble ──────────────────────────────────────────────
+
+_BORDER_W = 4      # animated gradient border thickness (px)
+_RADIUS   = 22.0   # corner radius of the visible bubble
+
+
 class ActionBubble(QDialog):
     def __init__(
         self,
@@ -74,73 +78,225 @@ class ActionBubble(QDialog):
         scheduler: "SchedulerService",
         on_close_cb,
     ) -> None:
-        super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint)
+        super().__init__(
+            None,
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool,
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
+        self.setAutoFillBackground(False)
+
         self._reminder_id = reminder.id
-        self._scheduler = scheduler
+        self._scheduler   = scheduler
         self._on_close_cb = on_close_cb
 
-        self.setWindowTitle("Reminder")
-        self.setFixedWidth(320)
+        # Deterministic art tied to this reminder (same system as cards)
+        seed = (reminder.id or abs(hash(reminder.name))) & 0x7FFFFFFF
+        self._seed      = seed
+        self._palette   = _SCHEMES[seed % len(_SCHEMES)]
+        self._is_dark   = (seed * 11 + 5) % 5 == 0
+        self._art_style = (seed * 17 + 5) % len(_STYLES)
+
+        # Animation state
+        self._phase = 0.0   # conical gradient start-angle, degrees
+        self._pulse = 0.0   # sin-based inner glow phase, radians
+
         self.setObjectName("ActionBubble")
+        self.setFixedWidth(430)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(10)
+        self._build(reminder)
 
-        name_label = QLabel(reminder.name)
-        name_label.setObjectName("BubbleName")
-        name_label.setWordWrap(True)
-        layout.addWidget(name_label)
-
-        if reminder.details:
-            detail_label = QLabel(reminder.details[:200])
-            detail_label.setObjectName("BubbleDetail")
-            detail_label.setWordWrap(True)
-            layout.addWidget(detail_label)
-
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
-
-        done_btn = QPushButton("Mark Done")
-        done_btn.setObjectName("BubbleDoneBtn")
-        done_btn.clicked.connect(self._mark_done)
-        btn_row.addWidget(done_btn)
-
-        snooze_btn = QPushButton("Snooze 30 min")
-        snooze_btn.setObjectName("BubbleSnoozeBtn")
-        snooze_btn.clicked.connect(self._snooze)
-        btn_row.addWidget(snooze_btn)
-
-        dismiss_btn = QPushButton("Dismiss")
-        dismiss_btn.setObjectName("BubbleDismissBtn")
-        dismiss_btn.clicked.connect(self.close)
-        btn_row.addWidget(dismiss_btn)
-
-        layout.addLayout(btn_row)
-
-        # Position bottom-right of screen
-        screen = QApplication.primaryScreen().availableGeometry()
+        # Position: bottom-right corner of primary screen
+        screen   = QApplication.primaryScreen().availableGeometry()
         self.adjustSize()
-        self.move(
-            screen.right() - self.width() - 20,
-            screen.bottom() - self.height() - 20,
+        self._final_pos = QPoint(
+            screen.right()  - self.width()  - 24,
+            screen.bottom() - self.height() - 24,
         )
 
-        # Auto-dismiss after 30 seconds
+        # Start below screen so slide-in is visible
+        self.move(self._final_pos.x(), screen.bottom() + 10)
+
+        # Slide-in via QPropertyAnimation on pos
+        self._slide = QPropertyAnimation(self, b"pos", self)
+        self._slide.setDuration(480)
+        self._slide.setStartValue(QPoint(self._final_pos.x(), screen.bottom() + 10))
+        self._slide.setEndValue(self._final_pos)
+        self._slide.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._slide.start()
+
+        # 50 fps animation ticker
+        self._anim = QTimer(self)
+        self._anim.timeout.connect(self._tick)
+        self._anim.start(20)
+
+        # Auto-dismiss after 30 s
         QTimer.singleShot(30_000, self.close)
+
+    # ── Build layout ─────────────────────────────────────────────────────────
+
+    def _build(self, reminder: Reminder) -> None:
+        PAD = _BORDER_W + 16
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(PAD + 2, PAD, PAD + 2, PAD)
+        root.setSpacing(12)
+
+        # Header: icon label + title in one row
+        header = QHBoxLayout()
+        header.setSpacing(10)
+
+        bell = QLabel("🔔")
+        bell.setFixedWidth(28)
+        bell.setStyleSheet("font-size: 20px;")
+        header.addWidget(bell)
+
+        name_lbl = QLabel(reminder.name)
+        name_lbl.setWordWrap(True)
+        if self._is_dark:
+            name_lbl.setStyleSheet(
+                "color: rgba(238,222,205,0.97); font-size: 17px; font-weight: 750;"
+            )
+        else:
+            name_lbl.setStyleSheet(
+                "color: #1C0800; font-size: 17px; font-weight: 750;"
+            )
+        header.addWidget(name_lbl, stretch=1)
+        root.addLayout(header)
+
+        # Optional details
+        if reminder.details:
+            det = QLabel(reminder.details[:220])
+            det.setWordWrap(True)
+            det.setStyleSheet(
+                "color: rgba(190,165,140,0.92); font-size: 13px;"
+                if self._is_dark
+                else "color: #8A5030; font-size: 13px;"
+            )
+            root.addWidget(det)
+
+        # Separator line — uses a thin QLabel with background
+        sep = QLabel()
+        sep.setFixedHeight(1)
+        A = self._palette[0]
+        sep.setStyleSheet(
+            f"background: rgba({A.red()},{A.green()},{A.blue()},90);"
+        )
+        root.addWidget(sep)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
+
+        done_btn = QPushButton("✓  Done")
+        done_btn.setObjectName("BubbleDoneBtn")
+        done_btn.setMinimumHeight(42)
+        done_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        done_btn.clicked.connect(self._mark_done)
+
+        snooze_btn = QPushButton("⏱  Snooze 30m")
+        snooze_btn.setObjectName("BubbleSnoozeBtn")
+        snooze_btn.setMinimumHeight(42)
+        snooze_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        snooze_btn.clicked.connect(self._snooze)
+
+        dismiss_btn = QPushButton("✕")
+        dismiss_btn.setObjectName("BubbleDismissBtn")
+        dismiss_btn.setMinimumHeight(42)
+        dismiss_btn.setFixedWidth(46)
+        dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        dismiss_btn.clicked.connect(self.close)
+
+        btn_row.addWidget(done_btn,    2)
+        btn_row.addWidget(snooze_btn,  2)
+        btn_row.addWidget(dismiss_btn, 0)
+        root.addLayout(btn_row)
+
+    # ── Animation ticker ─────────────────────────────────────────────────────
+
+    def _tick(self) -> None:
+        self._phase = (self._phase + 1.4) % 360.0   # full rotation in ~4.3 s
+        self._pulse += 0.055                          # glow pulse cycle
+        self.update()
+
+    # ── Custom painting ───────────────────────────────────────────────────────
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        full  = QRectF(self.rect())
+        bw    = _BORDER_W
+        inner = full.adjusted(bw, bw, -bw, -bw)
+        ri    = _RADIUS - bw
+        A, B, *rest = self._palette
+        C = rest[0] if rest else A
+        D = rest[1] if len(rest) > 1 else B
+
+        # ── 1. Animated conical-gradient border ring ──────────────────────
+        cx, cy = full.center().x(), full.center().y()
+        cg = QConicalGradient(cx, cy, self._phase)
+        cg.setColorAt(0.00, _c(A, 255))
+        cg.setColorAt(0.25, _c(B, 255))
+        cg.setColorAt(0.50, _c(C, 255))
+        cg.setColorAt(0.75, _c(D, 220))
+        cg.setColorAt(1.00, _c(A, 255))
+
+        outer_path = QPainterPath()
+        outer_path.addRoundedRect(full.adjusted(0.5, 0.5, -0.5, -0.5), _RADIUS, _RADIUS)
+        inner_path = QPainterPath()
+        inner_path.addRoundedRect(inner, ri, ri)
+        border_ring = outer_path.subtracted(inner_path)
+
+        p.setPen(Qt.NoPen)
+        p.setBrush(QBrush(cg))
+        p.drawPath(border_ring)
+
+        # ── 2. Clip to inner rounded area ────────────────────────────────
+        clip = QPainterPath()
+        clip.addRoundedRect(inner, ri, ri)
+        p.setClipPath(clip)
+
+        # ── 3. Opaque base fill (CompositionMode_Source for solid alpha) ──
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+        if self._is_dark:
+            bg = _DARK_BASES[self._seed % len(_DARK_BASES)]
+            p.fillRect(inner, QColor(bg.red(), bg.green(), bg.blue(), 238))
+        else:
+            p.fillRect(inner, QColor(255, 252, 248, 240))
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+
+        # ── 4. Card art — same style as the matching ReminderCard ─────────
+        rng = random.Random(self._seed)
+        if not self._is_dark:
+            _draw_base(p, inner, rng, self._palette, self._seed)
+        _STYLES[self._art_style](p, inner, rng, self._palette)
+
+        # ── 5. Frosted veil — heavier than cards for text readability ─────
+        veil_a = int(120 + 14 * math.sin(self._pulse))   # gentle breathing
+        if self._is_dark:
+            p.fillPath(clip, QColor(0, 0, 0, veil_a))
+        else:
+            p.fillPath(clip, QColor(255, 255, 255, veil_a + 30))
+
+        # painter ends automatically when it goes out of scope
+
+    # ── Business logic ────────────────────────────────────────────────────────
 
     def _mark_done(self) -> None:
         with get_session() as session:
             reminder = session.get(Reminder, self._reminder_id)
             if reminder:
-                reminder.is_done = True
-                reminder.is_active = False
+                reminder.is_done     = True
+                reminder.is_active   = False
         self._scheduler.remove_reminder(self._reminder_id)
         self.close()
 
     def _snooze(self) -> None:
         snooze_until = datetime.utcnow() + timedelta(minutes=30)
-        reminder = None  # guard against NameError if session.get() raises before assignment
+        reminder     = None
         with get_session() as session:
             reminder = session.get(Reminder, self._reminder_id)
             if reminder:
@@ -149,14 +305,14 @@ class ActionBubble(QDialog):
                 session.expunge(reminder)
             else:
                 reminder = None
-
         if reminder:
             from remindee.models.reminder import FrequencyType
-            reminder.frequency = FrequencyType.SPECIFIC
+            reminder.frequency        = FrequencyType.SPECIFIC
             reminder.specific_datetime = snooze_until
             self._scheduler.schedule_reminder(reminder)
         self.close()
 
     def closeEvent(self, event) -> None:
+        self._anim.stop()
         self._on_close_cb(self._reminder_id)
         super().closeEvent(event)

@@ -27,6 +27,9 @@ class Reminder(Base):
     frequency: Mapped[FrequencyType] = mapped_column(Enum(FrequencyType), nullable=False)
     specific_datetime: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     next_trigger: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    font_family: Mapped[str] = mapped_column(
+        String(128), nullable=False, server_default="Marker Felt"
+    )
     is_done: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     snooze_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
