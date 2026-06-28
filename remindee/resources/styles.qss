@@ -294,6 +294,12 @@ QPushButton#PrimaryBtn:pressed {
     background: @accent;
 }
 
+QLabel#ConfirmMsg {
+    color: @text;
+    font-size: 15px;
+    font-weight: 500;
+}
+
 QPushButton#DangerBtn {
     background: @danger;
     color: #ffffff;

@@ -79,8 +79,8 @@ class _ConfirmDialog(QDialog):
         layout.setSpacing(20)
 
         lbl = QLabel(message)
+        lbl.setObjectName("ConfirmMsg")
         lbl.setWordWrap(True)
-        lbl.setStyleSheet("font-size: 15px; font-weight: 500;")
         layout.addWidget(lbl)
 
         row = QHBoxLayout()
