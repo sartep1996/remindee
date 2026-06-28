@@ -160,14 +160,25 @@ class ReminderDialog(QDialog):
             return "color: rgba(195,172,148,0.90); font-size: 12px; font-weight: 600; letter-spacing: 0.3px;"
         return "color: #1C0800; font-size: 12px; font-weight: 600; letter-spacing: 0.3px;"
 
-    def _input_ss(self) -> str:
-        """Override form input background/text for dark backgrounds."""
+    def _input_ss(self, height: str = "") -> str:
+        """Explicit input style for both dark and light card art.
+
+        Non-dark cards always get a white-opaque background + near-black text
+        so they stay readable regardless of the app theme — the card veil is
+        always light for non-dark art, making QSS dark-mode tokens invisible.
+        """
+        h = f" min-height: {height};" if height else ""
         if self._art_dark:
             return (
-                "background: rgba(255,255,255,0.10); border: 1.5px solid rgba(255,255,255,0.18);"
-                "border-radius: 10px; color: rgba(238,222,205,0.97); font-size: 14px; padding: 11px 14px;"
+                f"background: rgba(255,255,255,0.10); border: 1.5px solid rgba(255,255,255,0.18);"
+                f"border-radius: 10px; color: rgba(238,222,205,0.97); font-size: 14px;"
+                f" padding: 11px 14px;{h}"
             )
-        return ""   # let QSS handle light mode
+        return (
+            f"background: rgba(255,255,255,0.82); border: 1.5px solid rgba(255,107,53,0.22);"
+            f"border-radius: 10px; color: #1C0800; font-size: 14px;"
+            f" padding: 11px 14px;{h}"
+        )
 
     # ── Layout ────────────────────────────────────────────────────────────────
 
@@ -227,6 +238,14 @@ class ReminderDialog(QDialog):
                 "QComboBox QAbstractItemView { background: rgba(28,18,42,0.97); color: rgba(238,222,205,0.97);"
                 " selection-background-color: rgba(255,255,255,0.20); border-radius: 8px; padding: 4px; }"
             )
+        else:
+            self._font_combo.setStyleSheet(
+                "QComboBox { background: rgba(255,255,255,0.82); border: 1.5px solid rgba(255,107,53,0.22);"
+                " border-radius: 8px; color: #1C0800; font-size: 13px; padding: 5px 10px; }"
+                "QComboBox QAbstractItemView { background: rgba(255,252,248,0.97); color: #1C0800;"
+                " selection-background-color: #FF6B35; selection-color: white;"
+                " border-radius: 8px; padding: 4px; }"
+            )
         name_header.addWidget(self._font_combo)
         layout.addLayout(name_header)
 
@@ -249,6 +268,11 @@ class ReminderDialog(QDialog):
                 "background: rgba(255,255,255,0.10); border: 1.5px solid rgba(255,255,255,0.18);"
                 "border-radius: 10px; color: rgba(238,222,205,0.97); font-size: 14px; padding: 10px;"
             )
+        else:
+            self._details_edit.setStyleSheet(
+                "background: rgba(255,255,255,0.82); border: 1.5px solid rgba(255,107,53,0.22);"
+                "border-radius: 10px; color: #1C0800; font-size: 14px; padding: 10px;"
+            )
         layout.addWidget(self._details_edit)
 
         # Frequency
@@ -264,6 +288,14 @@ class ReminderDialog(QDialog):
                 " border-radius: 10px; color: rgba(238,222,205,0.97); font-size: 14px; padding: 10px 14px; }"
                 "QComboBox QAbstractItemView { background: rgba(28,18,42,0.97); color: rgba(238,222,205,0.97);"
                 " selection-background-color: rgba(255,255,255,0.20); border-radius: 8px; padding: 4px; }"
+            )
+        else:
+            self._freq_combo.setStyleSheet(
+                "QComboBox { background: rgba(255,255,255,0.82); border: 1.5px solid rgba(255,107,53,0.22);"
+                " border-radius: 10px; color: #1C0800; font-size: 14px; padding: 10px 14px; }"
+                "QComboBox QAbstractItemView { background: rgba(255,252,248,0.97); color: #1C0800;"
+                " selection-background-color: #FF6B35; selection-color: white;"
+                " border-radius: 8px; padding: 4px; }"
             )
         layout.addWidget(self._freq_combo)
 
@@ -292,6 +324,11 @@ class ReminderDialog(QDialog):
                 "background: rgba(255,255,255,0.10); border: 1.5px solid rgba(255,255,255,0.18);"
                 "border-radius: 10px; color: rgba(238,222,205,0.97); font-size: 14px; padding: 9px 14px;"
             )
+        else:
+            self._time_edit.setStyleSheet(
+                "background: rgba(255,255,255,0.82); border: 1.5px solid rgba(255,107,53,0.22);"
+                "border-radius: 10px; color: #1C0800; font-size: 14px; padding: 9px 14px;"
+            )
         dt_layout.addWidget(self._time_edit)
 
         self._dt_widget.setMaximumHeight(0)
@@ -306,6 +343,8 @@ class ReminderDialog(QDialog):
         self._error_lbl.hide()
         if self._art_dark:
             self._error_lbl.setStyleSheet("color: rgba(255,120,100,0.95); font-size: 12px; font-weight: 500;")
+        else:
+            self._error_lbl.setStyleSheet("color: #EF4444; font-size: 12px; font-weight: 500;")
         layout.addWidget(self._error_lbl)
 
         # Buttons
@@ -321,6 +360,11 @@ class ReminderDialog(QDialog):
             cancel_btn.setStyleSheet(
                 "background: rgba(255,255,255,0.12); border: 1.5px solid rgba(255,255,255,0.22);"
                 "border-radius: 10px; color: rgba(238,222,205,0.90); font-size: 14px; padding: 12px;"
+            )
+        else:
+            cancel_btn.setStyleSheet(
+                "background: rgba(255,255,255,0.65); border: 1.5px solid rgba(255,107,53,0.22);"
+                "border-radius: 10px; color: #1C0800; font-size: 14px; padding: 12px;"
             )
         btn_row.addWidget(cancel_btn)
 
