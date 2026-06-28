@@ -527,6 +527,14 @@ class MainWindow(QMainWindow):
         dlg.reminder_requested.connect(self._on_quick_reminder)
         self._quick_note = dlg
         dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+        # macOS: bring REMINDEE to front so the dialog can receive key events
+        try:
+            from AppKit import NSApplication
+            NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        except Exception:
+            pass
 
     @Slot(str)
     def _on_quick_save(self, text: str) -> None:

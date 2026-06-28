@@ -179,7 +179,15 @@ class QuickNoteDialog(QDialog):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        QTimer.singleShot(60, self._note.setFocus)
+        self.raise_()
+        self.activateWindow()
+        # Small delay lets the native activation complete before forcing focus
+        QTimer.singleShot(120, self._focus_note)
+
+    def _focus_note(self) -> None:
+        self.raise_()
+        self.activateWindow()
+        self._note.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def closeEvent(self, event) -> None:
         self._anim.stop()
@@ -245,9 +253,8 @@ class QuickNoteDialog(QDialog):
         p.fillRect(0, 0, w, h, grad)
         p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
-        # Grain
-        import random as _random
-        rng = _random.Random(self._seed)
+        # Grain (new Random from fixed seed → static texture every frame)
+        rng = random.Random(self._seed)
         _draw_grain(p, QRectF(0, 0, w, h), rng)
 
         # Breathing highlight
