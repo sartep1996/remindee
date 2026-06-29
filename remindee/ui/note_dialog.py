@@ -98,16 +98,17 @@ def _list_icon(numbered: bool, color: QColor, size: int = 18) -> QIcon:
 
 
 def _dot_ss(hex_col: str, *, checked: bool) -> str:
+    """Word-style square color swatch — thick dark border + checkmark when selected."""
     if checked:
         return (
-            f"QPushButton {{ background: {hex_col}; border: 2.5px solid white;"
-            f" border-radius: 12px; color: white; font-size: 13px; font-weight: 700; }}"
-            f"QPushButton:hover {{ border: 2.5px solid white; }}"
+            f"QPushButton {{ background: {hex_col}; border: 2.5px solid rgba(0,0,0,0.75);"
+            f" border-radius: 3px; color: white; font-size: 11px; font-weight: 700; }}"
+            f"QPushButton:hover {{ border: 2.5px solid rgba(0,0,0,0.90); }}"
         )
     return (
-        f"QPushButton {{ background: {hex_col}; border: 2px solid rgba(255,255,255,0.55);"
-        f" border-radius: 12px; color: transparent; font-size: 13px; }}"
-        f"QPushButton:hover {{ border: 2px solid white; }}"
+        f"QPushButton {{ background: {hex_col}; border: 1px solid rgba(0,0,0,0.22);"
+        f" border-radius: 3px; color: transparent; font-size: 11px; }}"
+        f"QPushButton:hover {{ border: 2px solid rgba(0,0,0,0.55); }}"
     )
 
 
@@ -209,14 +210,14 @@ class NoteDialog(QDialog):
         )
 
     def _combo_ss(self) -> str:
-        # padding-right: 28px leaves room for the native dropdown arrow
+        # padding-right: 4px — the ::drop-down width already reserves the arrow zone
         if self._art_dark:
             return (
                 "QComboBox { background: rgba(255,255,255,0.10);"
                 " border: 1.5px solid rgba(255,255,255,0.18);"
                 " border-radius: 7px; color: rgba(238,222,205,0.97);"
-                " font-size: 12px; padding: 3px 28px 3px 8px; }"
-                "QComboBox::drop-down { width: 22px; border: none; }"
+                " font-size: 12px; padding: 3px 4px 3px 8px; }"
+                "QComboBox::drop-down { width: 20px; border: none; }"
                 "QComboBox QAbstractItemView {"
                 " background: rgba(28,18,42,0.97); color: rgba(238,222,205,0.97);"
                 " selection-background-color: rgba(255,255,255,0.20); }"
@@ -225,8 +226,8 @@ class NoteDialog(QDialog):
             "QComboBox { background: rgba(255,255,255,0.82);"
             " border: 1.5px solid rgba(255,107,53,0.22);"
             " border-radius: 7px; color: #1C0800; font-size: 12px;"
-            " padding: 3px 28px 3px 8px; }"
-            "QComboBox::drop-down { width: 22px; border: none; }"
+            " padding: 3px 4px 3px 8px; }"
+            "QComboBox::drop-down { width: 20px; border: none; }"
             "QComboBox QAbstractItemView {"
             " background: rgba(255,252,248,0.97); color: #1C0800;"
             " selection-background-color: #FF6B35; selection-color: white; }"
@@ -447,16 +448,26 @@ class NoteDialog(QDialog):
         layout.setContentsMargins(16, 0, 16, 0)
         layout.setSpacing(8)
 
-        # Color dots — NOT checkable (avoids bool-arg capture bug);
-        # selected state shown by a "✓" label + prominent white border
+        # Word-style square color swatches — label prefix for clarity
+        lbl = QPushButton("Label:")
+        lbl.setEnabled(False)
+        lbl.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; font-size: 11px;"
+            f" color: {'rgba(200,180,155,0.80)' if self._art_dark else 'rgba(80,50,30,0.65)'}; }}"
+        )
+        layout.addWidget(lbl)
+        layout.addSpacing(2)
+
+        # NOT checkable — we manage visual state entirely in _pick_color.
+        # _=False absorbs Qt's clicked(bool) arg so n/h keep their captured defaults.
         self._dot_btns: dict[str, QPushButton] = {}
         for name, hex_col in _COLOR_DOTS:
             dot = QPushButton("✓" if self._color_label == name else "")
-            dot.setFixedSize(26, 26)
+            dot.setFixedSize(20, 20)
             dot.setToolTip(name.capitalize())
             dot.setStyleSheet(_dot_ss(hex_col, checked=(self._color_label == name)))
             dot.setCursor(Qt.CursorShape.PointingHandCursor)
-            dot.clicked.connect(lambda n=name, h=hex_col: self._pick_color(n, h))
+            dot.clicked.connect(lambda _=False, n=name, h=hex_col: self._pick_color(n, h))
             self._dot_btns[name] = dot
             layout.addWidget(dot)
 
@@ -557,11 +568,9 @@ class NoteDialog(QDialog):
         fname = item.data(Qt.ItemDataRole.UserRole)
         if not fname:
             return
-        # Apply to editor (rich text per selection)
+        # Applies only to selected text (or cursor position for new typing);
+        # the title field is intentionally excluded.
         self._editor.setCurrentFont(QFont(fname))
-        # Apply to title — QSS has no font-family, so setFont() is respected
-        title_font = QFont(fname, _TITLE_FONT_SIZE, QFont.Weight.Bold)
-        self._title_edit.setFont(title_font)
         self._editor.setFocus()
 
     def _on_size_changed(self, text: str) -> None:
