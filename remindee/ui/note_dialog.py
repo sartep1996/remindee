@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import random
 
-from PySide6.QtCore import Qt, QRectF, Signal
+from PySide6.QtCore import Qt, QRectF, QSize, Signal
 from PySide6.QtGui import (
-    QColor, QFont, QPainter, QStandardItem, QStandardItemModel,
+    QColor, QFont, QIcon, QPainter, QPen, QPixmap,
+    QStandardItem, QStandardItemModel,
     QTextCharFormat, QTextListFormat,
 )
 from PySide6.QtWidgets import (
@@ -42,18 +43,71 @@ _FONT_SIZES = [
     "18", "20", "24", "28", "32", "36", "48",
 ]
 
+_TITLE_FONT_SIZE = 16
+
+
+# ── Icon helpers ──────────────────────────────────────────────────────────────
+
+def _para_align_icon(align: str, color: QColor, size: int = 18) -> QIcon:
+    """Word-style paragraph alignment icon drawn with QPainter."""
+    pix = QPixmap(size, size)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(color, 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+    p.setPen(pen)
+    w = float(size)
+    # Four horizontal text-line segments, varying lengths/positions by alignment
+    if align == "left":
+        segs = [(0.0, 0.95), (0.0, 0.60), (0.0, 0.82), (0.0, 0.50)]
+    elif align == "center":
+        segs = [(0.05, 0.95), (0.20, 0.80), (0.10, 0.90), (0.25, 0.75)]
+    else:
+        segs = [(0.05, 1.0), (0.40, 1.0), (0.18, 1.0), (0.50, 1.0)]
+    for i, (x1, x2) in enumerate(segs):
+        y = 2 + i * 4
+        p.drawLine(int(x1 * w), y, int(x2 * w), y)
+    p.end()
+    return QIcon(pix)
+
+
+def _list_icon(numbered: bool, color: QColor, size: int = 18) -> QIcon:
+    """Bullet or numbered list icon drawn with QPainter."""
+    pix = QPixmap(size, size)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(QPen(color, 1.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    w = float(size)
+    for row_idx, y in enumerate((3, 8, 13)):
+        if numbered:
+            # Small digit
+            p.setFont(QFont("Helvetica Neue", 7, QFont.Weight.Bold))
+            p.drawText(0, y - 1, 6, 7, Qt.AlignmentFlag.AlignCenter, str(row_idx + 1))
+        else:
+            # Filled circle bullet
+            p.setBrush(color)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(1, y, 4, 4)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(color, 1.4))
+        # Text line next to marker
+        p.drawLine(8, y + 2, int(0.95 * w), y + 2)
+    p.end()
+    return QIcon(pix)
+
 
 def _dot_ss(hex_col: str, *, checked: bool) -> str:
     if checked:
         return (
-            f"QPushButton {{ background: {hex_col}; border: 3px solid white;"
-            f" border-radius: 12px; }}"
-            f"QPushButton:hover {{ border: 3px solid rgba(255,255,255,0.85); }}"
+            f"QPushButton {{ background: {hex_col}; border: 2.5px solid white;"
+            f" border-radius: 12px; color: white; font-size: 13px; font-weight: 700; }}"
+            f"QPushButton:hover {{ border: 2.5px solid white; }}"
         )
     return (
-        f"QPushButton {{ background: {hex_col}; border: 1.5px solid rgba(0,0,0,0.18);"
-        f" border-radius: 12px; }}"
-        f"QPushButton:hover {{ border: 2px solid rgba(0,0,0,0.40); }}"
+        f"QPushButton {{ background: {hex_col}; border: 2px solid rgba(255,255,255,0.55);"
+        f" border-radius: 12px; color: transparent; font-size: 13px; }}"
+        f"QPushButton:hover {{ border: 2px solid white; }}"
     )
 
 
@@ -78,7 +132,7 @@ class NoteDialog(QDialog):
         self._folder_id    = folder_id
         self._color_label: str | None = note.color_label if note else None
 
-        # Art seed — mirrors NoteCard seed logic exactly so dialog art matches the card
+        # Art seed — mirrors NoteCard seed logic so dialog art matches the card
         if note and note.id:
             seed = note.id & 0x7FFFFFFF
         else:
@@ -110,7 +164,7 @@ class NoteDialog(QDialog):
 
         self._title_edit.setFocus()
 
-    # ── Custom background (matches ReminderDialog exactly) ────────────────────
+    # ── Custom background ─────────────────────────────────────────────────────
 
     def paintEvent(self, event) -> None:
         p = QPainter(self)
@@ -128,7 +182,6 @@ class NoteDialog(QDialog):
 
         _STYLES[self._art_style](p, r, rng, self._art_palette)
 
-        # Heavy veil — more than the card so toolbar and form fields stay readable
         if self._art_dark:
             p.fillRect(r, QColor(0, 0, 0, 148))
         else:
@@ -139,8 +192,10 @@ class NoteDialog(QDialog):
     def _text_col(self) -> str:
         return "rgba(238,222,205,0.97)" if self._art_dark else "#1C0800"
 
+    def _q_text_col(self) -> QColor:
+        return QColor(238, 222, 205) if self._art_dark else QColor(28, 8, 0)
+
     def _input_ss(self) -> str:
-        """Semi-opaque input background so form fields are readable over the art."""
         if self._art_dark:
             return (
                 "background: rgba(255,255,255,0.10); border: 1.5px solid rgba(255,255,255,0.18);"
@@ -154,12 +209,14 @@ class NoteDialog(QDialog):
         )
 
     def _combo_ss(self) -> str:
+        # padding-right: 28px leaves room for the native dropdown arrow
         if self._art_dark:
             return (
                 "QComboBox { background: rgba(255,255,255,0.10);"
                 " border: 1.5px solid rgba(255,255,255,0.18);"
                 " border-radius: 7px; color: rgba(238,222,205,0.97);"
-                " font-size: 12px; padding: 3px 8px; }"
+                " font-size: 12px; padding: 3px 28px 3px 8px; }"
+                "QComboBox::drop-down { width: 22px; border: none; }"
                 "QComboBox QAbstractItemView {"
                 " background: rgba(28,18,42,0.97); color: rgba(238,222,205,0.97);"
                 " selection-background-color: rgba(255,255,255,0.20); }"
@@ -167,7 +224,9 @@ class NoteDialog(QDialog):
         return (
             "QComboBox { background: rgba(255,255,255,0.82);"
             " border: 1.5px solid rgba(255,107,53,0.22);"
-            " border-radius: 7px; color: #1C0800; font-size: 12px; padding: 3px 8px; }"
+            " border-radius: 7px; color: #1C0800; font-size: 12px;"
+            " padding: 3px 28px 3px 8px; }"
+            "QComboBox::drop-down { width: 22px; border: none; }"
             "QComboBox QAbstractItemView {"
             " background: rgba(255,252,248,0.97); color: #1C0800;"
             " selection-background-color: #FF6B35; selection-color: white; }"
@@ -202,7 +261,8 @@ class NoteDialog(QDialog):
         layout.setContentsMargins(10, 0, 10, 0)
         layout.setSpacing(2)
 
-        tc = self._text_col()
+        tc      = self._text_col()
+        qt_col  = self._q_text_col()
 
         def _sep() -> QFrame:
             f = QFrame()
@@ -230,6 +290,22 @@ class NoteDialog(QDialog):
                 f"QPushButton:hover   {{ background: {hover}; }}"
                 f"QPushButton:checked {{ background: {chk}; }}"
                 f"QPushButton:pressed {{ background: {hover}; }}"
+            )
+            return b
+
+        def _icon_btn(icon: QIcon, tip: str, *, checkable: bool = False) -> QPushButton:
+            b = QPushButton()
+            b.setIcon(icon)
+            b.setIconSize(QSize(18, 18))
+            b.setToolTip(tip)
+            b.setCheckable(checkable)
+            b.setFixedSize(30, 30)
+            hover = "rgba(255,255,255,0.20)" if self._art_dark else "rgba(255,107,53,0.15)"
+            chk   = "rgba(255,255,255,0.30)" if self._art_dark else "rgba(255,107,53,0.22)"
+            b.setStyleSheet(
+                f"QPushButton {{ background: transparent; border: none; border-radius: 5px; }}"
+                f"QPushButton:hover   {{ background: {hover}; }}"
+                f"QPushButton:checked {{ background: {chk}; }}"
             )
             return b
 
@@ -269,7 +345,7 @@ class NoteDialog(QDialog):
         self._size_combo = QComboBox()
         self._size_combo.addItems(_FONT_SIZES)
         self._size_combo.setCurrentText("14")
-        self._size_combo.setFixedWidth(60)
+        self._size_combo.setFixedWidth(66)
         self._size_combo.setFixedHeight(30)
         self._size_combo.setEditable(True)
         self._size_combo.setStyleSheet(self._combo_ss())
@@ -297,20 +373,20 @@ class NoteDialog(QDialog):
         layout.addWidget(self._underline_btn)
         layout.addWidget(_sep())
 
-        # Alignment — ← ↔ → are immediately legible, unlike ⬛︎ ▬ ⬜︎
-        for icon, tip, flag in (
-            ("←", "Align Left",   Qt.AlignmentFlag.AlignLeft),
-            ("↔", "Align Centre", Qt.AlignmentFlag.AlignHCenter),
-            ("→", "Align Right",  Qt.AlignmentFlag.AlignRight),
+        # Alignment — Word-style paragraph icons drawn with QPainter
+        for align, tip, flag in (
+            ("left",   "Align Left",   Qt.AlignmentFlag.AlignLeft),
+            ("center", "Align Centre", Qt.AlignmentFlag.AlignHCenter),
+            ("right",  "Align Right",  Qt.AlignmentFlag.AlignRight),
         ):
-            b = _btn(icon, tip)
+            b = _icon_btn(_para_align_icon(align, qt_col), tip)
             b.clicked.connect(lambda _, f=flag: self._editor.setAlignment(f))
             layout.addWidget(b)
         layout.addWidget(_sep())
 
-        # Lists
-        bullet_btn   = _btn("•—", "Bullet list")
-        numbered_btn = _btn("1.",  "Numbered list")
+        # Lists — QPainter-drawn icons
+        bullet_btn   = _icon_btn(_list_icon(False, qt_col), "Bullet list")
+        numbered_btn = _icon_btn(_list_icon(True,  qt_col), "Numbered list")
         bullet_btn.clicked.connect(self._toggle_bullet)
         numbered_btn.clicked.connect(self._toggle_numbered)
         layout.addWidget(bullet_btn)
@@ -325,14 +401,15 @@ class NoteDialog(QDialog):
         layout.setContentsMargins(24, 16, 24, 8)
         layout.setSpacing(8)
 
-        # Title — inherits _input_ss but bumped font size + family
+        # Title — font-family intentionally NOT in QSS so setFont() works for font switching
         self._title_edit = QLineEdit()
         self._title_edit.setPlaceholderText("Title…")
         self._title_edit.setStyleSheet(
-            f"QLineEdit {{ {self._input_ss()}"
-            " font-size: 20px; font-weight: 700; font-family: 'Marker Felt', serif; }"
+            f"QLineEdit {{ {self._input_ss()} font-size: 20px; font-weight: 700; }}"
             f"QLineEdit:focus {{ border-color: {'rgba(255,255,255,0.40)' if self._art_dark else '#FF6B35'}; }}"
         )
+        # Font family set programmatically so _on_font_index_changed can override it
+        self._title_edit.setFont(QFont("Marker Felt", _TITLE_FONT_SIZE, QFont.Weight.Bold))
         layout.addWidget(self._title_edit)
 
         # Rich-text WYSIWYG editor
@@ -370,17 +447,16 @@ class NoteDialog(QDialog):
         layout.setContentsMargins(16, 0, 16, 0)
         layout.setSpacing(8)
 
-        # Color dots — selected dot gets a prominent white border so the change is obvious
+        # Color dots — NOT checkable (avoids bool-arg capture bug);
+        # selected state shown by a "✓" label + prominent white border
         self._dot_btns: dict[str, QPushButton] = {}
         for name, hex_col in _COLOR_DOTS:
-            dot = QPushButton()
-            dot.setFixedSize(24, 24)
-            dot.setCheckable(True)
-            dot.setChecked(self._color_label == name)
+            dot = QPushButton("✓" if self._color_label == name else "")
+            dot.setFixedSize(26, 26)
             dot.setToolTip(name.capitalize())
             dot.setStyleSheet(_dot_ss(hex_col, checked=(self._color_label == name)))
             dot.setCursor(Qt.CursorShape.PointingHandCursor)
-            dot.clicked.connect(lambda _, n=name, h=hex_col: self._pick_color(n, h))
+            dot.clicked.connect(lambda n=name, h=hex_col: self._pick_color(n, h))
             self._dot_btns[name] = dot
             layout.addWidget(dot)
 
@@ -481,7 +557,11 @@ class NoteDialog(QDialog):
         fname = item.data(Qt.ItemDataRole.UserRole)
         if not fname:
             return
+        # Apply to editor (rich text per selection)
         self._editor.setCurrentFont(QFont(fname))
+        # Apply to title — QSS has no font-family, so setFont() is respected
+        title_font = QFont(fname, _TITLE_FONT_SIZE, QFont.Weight.Bold)
+        self._title_edit.setFont(title_font)
         self._editor.setFocus()
 
     def _on_size_changed(self, text: str) -> None:
@@ -535,9 +615,10 @@ class NoteDialog(QDialog):
     def _pick_color(self, name: str, _hex: str) -> None:
         self._color_label = None if self._color_label == name else name
         for n, dot in self._dot_btns.items():
-            h = dict(_COLOR_DOTS)[n]
-            dot.setChecked(n == self._color_label)
-            dot.setStyleSheet(_dot_ss(h, checked=(n == self._color_label)))
+            h       = dict(_COLOR_DOTS)[n]
+            selected = n == self._color_label
+            dot.setText("✓" if selected else "")
+            dot.setStyleSheet(_dot_ss(h, checked=selected))
 
     # ── Save / convert ────────────────────────────────────────────────────────
 
