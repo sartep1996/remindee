@@ -10,7 +10,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QColorDialog, QComboBox, QDialog, QFrame,
-    QHBoxLayout, QLineEdit, QPushButton, QTextEdit,
+    QHBoxLayout, QLineEdit, QMessageBox, QPushButton, QTextEdit,
     QVBoxLayout, QWidget,
 )
 
@@ -601,7 +601,7 @@ class NoteDialog(QDialog):
         cursor  = self._editor.textCursor()
         current = cursor.currentList()
         if current and current.format().style() == QTextListFormat.Style.ListDisc:
-            cursor.setBlockFormat(cursor.blockFormat())
+            current.remove(cursor.block())   # actually detaches the block from the list
         else:
             fmt = QTextListFormat()
             fmt.setStyle(QTextListFormat.Style.ListDisc)
@@ -612,7 +612,7 @@ class NoteDialog(QDialog):
         cursor  = self._editor.textCursor()
         current = cursor.currentList()
         if current and current.format().style() == QTextListFormat.Style.ListDecimal:
-            cursor.setBlockFormat(cursor.blockFormat())
+            current.remove(cursor.block())
         else:
             fmt = QTextListFormat()
             fmt.setStyle(QTextListFormat.Style.ListDecimal)
@@ -656,6 +656,8 @@ class NoteDialog(QDialog):
         from remindee.ui.reminder_dialog import ReminderDialog
         scheduler = getattr(self.parent(), "_scheduler", None)
         if scheduler is None:
+            QMessageBox.warning(self, "Cannot Convert",
+                                "Scheduler is not available in this context.")
             return
         dlg = ReminderDialog(
             self._user, scheduler,
