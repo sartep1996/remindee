@@ -168,9 +168,9 @@ class NoteDialog(QDialog):
 
         # Undo / Redo
         undo = _btn("↩", "Undo (Cmd+Z)")
-        undo.clicked.connect(self._editor.undo)
+        undo.clicked.connect(lambda: self._editor.undo())
         redo = _btn("↪", "Redo (Cmd+Shift+Z)")
-        redo.clicked.connect(self._editor.redo)
+        redo.clicked.connect(lambda: self._editor.redo())
         layout.addWidget(undo)
         layout.addWidget(redo)
         layout.addWidget(_sep())
