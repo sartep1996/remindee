@@ -27,6 +27,7 @@ def init_db() -> None:
         for stmt in [
             "ALTER TABLE reminders ADD COLUMN font_family VARCHAR(128) NOT NULL DEFAULT 'Marker Felt'",
             "ALTER TABLE users ADD COLUMN app_font VARCHAR(128) NOT NULL DEFAULT 'Marker Felt'",
+            "ALTER TABLE notes ADD COLUMN attachments TEXT",
         ]:
             try:
                 conn.execute(text(stmt))

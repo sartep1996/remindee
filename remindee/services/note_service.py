@@ -86,6 +86,7 @@ class NoteService:
         body_md: str = "",
         folder_id: int | None = None,
         color_label: str | None = None,
+        attachments: str | None = None,
     ) -> Note:
         with get_session() as session:
             note = Note(
@@ -94,6 +95,7 @@ class NoteService:
                 body_md=body_md,
                 folder_id=folder_id,
                 color_label=color_label,
+                attachments=attachments,
             )
             session.add(note)
             session.flush()

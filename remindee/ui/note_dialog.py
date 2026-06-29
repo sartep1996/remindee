@@ -1,17 +1,22 @@
 from __future__ import annotations
 
+import base64
+import json
+import mimetypes
+import os
 import random
+import tempfile
 
-from PySide6.QtCore import QEvent, Qt, QRectF, QSize, Signal
+from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, Qt, QRectF, QSize, QUrl, Signal
 from PySide6.QtGui import (
-    QColor, QFont, QIcon, QPainter, QPen, QPixmap,
+    QColor, QDesktopServices, QFont, QIcon, QImage, QPainter, QPen, QPixmap,
     QStandardItem, QStandardItemModel,
-    QTextCharFormat, QTextListFormat,
+    QTextCharFormat, QTextFrameFormat, QTextListFormat, QTextTableFormat,
 )
 from PySide6.QtWidgets import (
-    QColorDialog, QComboBox, QDialog, QFrame,
-    QHBoxLayout, QLineEdit, QMenu, QMessageBox, QPushButton, QTextEdit,
-    QVBoxLayout, QWidget,
+    QColorDialog, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+    QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox,
+    QPushButton, QSpinBox, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from remindee.models.note import Note
@@ -62,6 +67,41 @@ _TEXT_COLORS: list[tuple[str, str]] = [
 ]
 
 
+# ── Table insert dialog ───────────────────────────────────────────────────────
+
+class _TableDialog(QDialog):
+    """Minimal row/column picker for inserting a table."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Insert Table")
+        self.setModal(True)
+        self.setFixedSize(230, 130)
+        layout = QFormLayout(self)
+        layout.setContentsMargins(16, 16, 16, 12)
+        layout.setSpacing(8)
+
+        self._rows = QSpinBox()
+        self._rows.setRange(1, 20)
+        self._rows.setValue(3)
+        self._cols = QSpinBox()
+        self._cols.setRange(1, 20)
+        self._cols.setValue(3)
+        layout.addRow("Rows:", self._rows)
+        layout.addRow("Columns:", self._cols)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        layout.addRow(btns)
+
+    def values(self) -> tuple[int, int]:
+        return self._rows.value(), self._cols.value()
+
+
 # ── Icon helpers ──────────────────────────────────────────────────────────────
 
 def _para_align_icon(align: str, color: QColor, size: int = 18) -> QIcon:
@@ -73,7 +113,6 @@ def _para_align_icon(align: str, color: QColor, size: int = 18) -> QIcon:
     pen = QPen(color, 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
     p.setPen(pen)
     w = float(size)
-    # Four horizontal text-line segments, varying lengths/positions by alignment
     if align == "left":
         segs = [(0.0, 0.95), (0.0, 0.60), (0.0, 0.82), (0.0, 0.50)]
     elif align == "center":
@@ -97,17 +136,14 @@ def _list_icon(numbered: bool, color: QColor, size: int = 18) -> QIcon:
     w = float(size)
     for row_idx, y in enumerate((3, 8, 13)):
         if numbered:
-            # Small digit
             p.setFont(QFont("Helvetica Neue", 7, QFont.Weight.Bold))
             p.drawText(0, y - 1, 6, 7, Qt.AlignmentFlag.AlignCenter, str(row_idx + 1))
         else:
-            # Filled circle bullet
             p.setBrush(color)
             p.setPen(Qt.PenStyle.NoPen)
             p.drawEllipse(1, y, 4, 4)
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(color, 1.4))
-        # Text line next to marker
         p.drawLine(8, y + 2, int(0.95 * w), y + 2)
     p.end()
     return QIcon(pix)
@@ -148,7 +184,11 @@ class NoteDialog(QDialog):
         self._note         = note
         self._folder_id    = folder_id
         self._color_label: str | None = note.color_label if note else None
-        self._last_text_focus: str = "title"  # "title" or "editor"
+        self._last_text_focus: str = "title"
+
+        # Load any existing file attachments stored as JSON
+        att_json = getattr(note, "attachments", None) if note else None
+        self._attachments: list[dict] = json.loads(att_json) if att_json else []
 
         # Art seed — mirrors NoteCard seed logic so dialog art matches the card
         if note and note.id:
@@ -165,10 +205,11 @@ class NoteDialog(QDialog):
         self.setObjectName("NoteDialog")
         self.setWindowTitle("Edit Note" if note else "New Note")
         self.setMinimumSize(700, 560)
-        self.resize(760, 600)
+        self.resize(760, 620)
         self.setModal(True)
 
         self._build()
+        self._refresh_att_panel()
 
         if note:
             self._title_edit.setText(note.title or "")
@@ -423,6 +464,23 @@ class NoteDialog(QDialog):
         numbered_btn.clicked.connect(self._toggle_numbered)
         layout.addWidget(bullet_btn)
         layout.addWidget(numbered_btn)
+        layout.addWidget(_sep())
+
+        # Image / Table / File attachment
+        img_btn = _btn("🖼", "Insert image")
+        img_btn.clicked.connect(self._insert_image)
+        layout.addWidget(img_btn)
+
+        tbl_btn = _btn("⊞", "Insert table")
+        tbl_btn.clicked.connect(self._insert_table)
+        layout.addWidget(tbl_btn)
+
+        layout.addWidget(_sep())
+
+        att_btn = _btn("📎", "Attach file")
+        att_btn.clicked.connect(self._add_attachment)
+        layout.addWidget(att_btn)
+
         layout.addStretch()
         return bar
 
@@ -449,7 +507,8 @@ class NoteDialog(QDialog):
         self._editor = QTextEdit()
         self._editor.setPlaceholderText(
             "Start writing…\n\n"
-            "Use the toolbar above for Bold, Italic, lists, and font changes."
+            "Use the toolbar above for Bold, Italic, lists, and font changes.\n"
+            "Use 🖼 to embed images, ⊞ to insert a table, 📎 to attach files."
         )
         self._editor.setAcceptRichText(True)
         self._editor.setStyleSheet(
@@ -460,6 +519,21 @@ class NoteDialog(QDialog):
         self._editor.currentCharFormatChanged.connect(self._sync_toolbar)
         self._editor.installEventFilter(self)
         layout.addWidget(self._editor, stretch=1)
+
+        # ── Attachment chip bar (hidden when no attachments) ───────────────────
+        self._att_panel = QWidget()
+        self._att_panel.setStyleSheet("background: transparent;")
+        self._att_layout = QHBoxLayout(self._att_panel)
+        self._att_layout.setContentsMargins(0, 2, 0, 4)
+        self._att_layout.setSpacing(6)
+        att_icon_lbl = QLabel("📎")
+        att_icon_lbl.setStyleSheet(
+            f"font-size: 13px; color: {self._text_col()}; background: transparent;"
+        )
+        self._att_layout.addWidget(att_icon_lbl)
+        self._att_layout.addStretch()
+        self._att_panel.setVisible(False)
+        layout.addWidget(self._att_panel)
 
         return pane
 
@@ -666,12 +740,148 @@ class NoteDialog(QDialog):
             cursor.createList(fmt)
         self._editor.setFocus()
 
+    # ── Insert image ──────────────────────────────────────────────────────────
+
+    def _insert_image(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Insert Image", "",
+            "Images (*.png *.jpg *.jpeg *.gif *.bmp *.webp)"
+        )
+        if not path:
+            return
+        img = QImage(path)
+        if img.isNull():
+            QMessageBox.warning(self, "Image Error", "Could not load the selected image.")
+            return
+        # Downscale wide images so they fit the editor without horizontal scroll
+        if img.width() > 900:
+            img = img.scaledToWidth(900, Qt.TransformationMode.SmoothTransformation)
+
+        # Convert to PNG bytes via QBuffer → base64 → data URI embedded in HTML
+        ba  = QByteArray()
+        buf = QBuffer(ba)
+        buf.open(QIODevice.OpenMode.WriteOnly)
+        img.save(buf, "PNG")
+        b64 = bytes(ba.toBase64()).decode()
+
+        cursor = self._editor.textCursor()
+        cursor.insertHtml(f'<img src="data:image/png;base64,{b64}" />')
+        self._editor.setTextCursor(cursor)
+        self._editor.setFocus()
+
+    # ── Insert table ──────────────────────────────────────────────────────────
+
+    def _insert_table(self) -> None:
+        dlg = _TableDialog(self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        rows, cols = dlg.values()
+        cursor = self._editor.textCursor()
+        fmt = QTextTableFormat()
+        fmt.setCellPadding(6)
+        fmt.setCellSpacing(0)
+        fmt.setBorder(1)
+        fmt.setBorderStyle(QTextFrameFormat.BorderStyle.BorderStyle_Solid)
+        cursor.insertTable(rows, cols, fmt)
+        self._editor.setFocus()
+
+    # ── File attachments ──────────────────────────────────────────────────────
+
+    _MAX_ATT_BYTES = 2 * 1024 * 1024  # 2 MB per attachment
+
+    def _add_attachment(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Attach File", "", "All Files (*)")
+        if not path:
+            return
+        size = os.path.getsize(path)
+        if size > self._MAX_ATT_BYTES:
+            QMessageBox.warning(
+                self, "File Too Large",
+                f"Please attach files smaller than 2 MB.\n(Selected file: {size // 1024} KB)"
+            )
+            return
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        b64  = base64.b64encode(raw).decode()
+        mime = mimetypes.guess_type(path)[0] or "application/octet-stream"
+        name = os.path.basename(path)
+        self._attachments.append({"name": name, "mime": mime, "data": b64})
+        self._refresh_att_panel()
+
+    def _open_attachment(self, att: dict) -> None:
+        """Write attachment bytes to a temp file and open with the system viewer."""
+        data   = base64.b64decode(att["data"])
+        suffix = os.path.splitext(att["name"])[1] or ".bin"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as fh:
+            fh.write(data)
+            tmp = fh.name
+        QDesktopServices.openUrl(QUrl.fromLocalFile(tmp))
+
+    def _remove_attachment(self, idx: int) -> None:
+        if 0 <= idx < len(self._attachments):
+            self._attachments.pop(idx)
+            self._refresh_att_panel()
+
+    def _make_att_chip(self, att: dict, idx: int) -> QWidget:
+        chip = QFrame()
+        if self._art_dark:
+            chip.setStyleSheet(
+                "QFrame { background: rgba(255,255,255,0.12);"
+                " border: 1px solid rgba(255,255,255,0.20); border-radius: 10px; }"
+            )
+        else:
+            chip.setStyleSheet(
+                "QFrame { background: rgba(255,255,255,0.75);"
+                " border: 1px solid rgba(0,0,0,0.15); border-radius: 10px; }"
+            )
+        row = QHBoxLayout(chip)
+        row.setContentsMargins(8, 3, 5, 3)
+        row.setSpacing(4)
+
+        name_btn = QPushButton(att["name"])
+        name_btn.setFlat(True)
+        name_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        name_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; font-size: 11px;"
+            f" color: {self._text_col()}; }}"
+            f"QPushButton:hover {{ text-decoration: underline; }}"
+        )
+        name_btn.clicked.connect(lambda _=False, a=att: self._open_attachment(a))
+        row.addWidget(name_btn)
+
+        del_btn = QPushButton("✕")
+        del_btn.setFixedSize(14, 14)
+        del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        del_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none;"
+            " font-size: 10px; color: rgba(100,60,30,0.65); }"
+            "QPushButton:hover { color: #EF4444; }"
+        )
+        del_btn.clicked.connect(lambda _=False, i=idx: self._remove_attachment(i))
+        row.addWidget(del_btn)
+
+        return chip
+
+    def _refresh_att_panel(self) -> None:
+        """Rebuild attachment chips: keep the 📎 label (index 0) and stretch (last)."""
+        while self._att_layout.count() > 2:
+            item = self._att_layout.takeAt(1)
+            if item and item.widget():
+                item.widget().deleteLater()
+
+        for i, att in enumerate(self._attachments):
+            # insertWidget(count-1, …) places each chip before the trailing stretch
+            self._att_layout.insertWidget(self._att_layout.count() - 1,
+                                          self._make_att_chip(att, i))
+
+        self._att_panel.setVisible(bool(self._attachments))
+
     # ── Color dots ────────────────────────────────────────────────────────────
 
     def _pick_color(self, name: str, _hex: str) -> None:
         self._color_label = None if self._color_label == name else name
         for n, dot in self._dot_btns.items():
-            h       = dict(_COLOR_DOTS)[n]
+            h        = dict(_COLOR_DOTS)[n]
             selected = n == self._color_label
             dot.setText("✓" if selected else "")
             dot.setStyleSheet(_dot_ss(h, checked=selected))
@@ -679,8 +889,10 @@ class NoteDialog(QDialog):
     # ── Save / convert ────────────────────────────────────────────────────────
 
     def _save(self) -> None:
-        title = self._title_edit.text().strip()
-        body  = self._editor.toHtml()
+        title    = self._title_edit.text().strip()
+        body     = self._editor.toHtml()
+        att_json = json.dumps(self._attachments) if self._attachments else None
+
         if self._note is None:
             self._note_service.create_note(
                 self._user.id,
@@ -688,6 +900,7 @@ class NoteDialog(QDialog):
                 body_md=body,
                 folder_id=self._folder_id,
                 color_label=self._color_label,
+                attachments=att_json,
             )
         else:
             self._note_service.update_note(
@@ -695,6 +908,7 @@ class NoteDialog(QDialog):
                 title=title,
                 body_md=body,
                 color_label=self._color_label,
+                attachments=att_json,
             )
         self.note_saved.emit()
         self.accept()

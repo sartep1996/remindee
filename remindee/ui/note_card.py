@@ -90,6 +90,16 @@ class NoteCard(QFrame):
         title.setFont(QFont("Marker Felt", 14))
         top_row.addWidget(title, stretch=1)
 
+        if self._note.attachments:
+            import json as _json
+            try:
+                if _json.loads(self._note.attachments):
+                    att_lbl = QLabel("📎")
+                    att_lbl.setStyleSheet("background: transparent; font-size: 11px;")
+                    top_row.addWidget(att_lbl)
+            except Exception:
+                pass
+
         edit_btn = QPushButton("✏")
         edit_btn.setObjectName("CardActionBtn")
         edit_btn.setFixedSize(38, 38)

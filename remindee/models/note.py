@@ -21,6 +21,7 @@ class Note(Base):
     body_md: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
     color_label: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    attachments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
