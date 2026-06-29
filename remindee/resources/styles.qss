@@ -122,6 +122,13 @@ QPushButton#SidebarBtn[active="true"] {
     font-weight: 700;
 }
 
+QPushButton#SidebarBtn[dragover="true"] {
+    background: rgba(255, 107, 53, 0.45);
+    border: 1.5px solid rgba(255, 107, 53, 0.80);
+    color: #ffffff;
+    font-weight: 600;
+}
+
 /* ── Content area ──────────────────────────────────────────────── */
 QWidget#ContentArea {
     background: transparent;

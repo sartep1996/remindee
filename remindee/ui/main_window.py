@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, date, timedelta
 from pathlib import Path
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QIcon, QAction, QPainter, QColor
 from PySide6.QtWidgets import (
     QMainWindow,
@@ -117,6 +117,52 @@ _SIDEBAR_TABS = [
     ("📋", "All"),
     ("🗓", "Calendar"),
 ]
+
+_NOTE_MIME = "application/x-remindee-note-id"
+
+
+class _FolderDropBtn(QPushButton):
+    """Sidebar folder button that highlights when a NoteCard is dragged over it."""
+
+    note_dropped = Signal(int, int)  # (note_id, folder_id)
+
+    def __init__(self, text: str, folder_id: int, parent=None) -> None:
+        super().__init__(text, parent)
+        self.setObjectName("SidebarBtn")
+        self._folder_id = folder_id
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasFormat(_NOTE_MIME):
+            event.acceptProposedAction()
+            self._set_dragover(True)
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event) -> None:
+        if event.mimeData().hasFormat(_NOTE_MIME):
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dragLeaveEvent(self, event) -> None:
+        self._set_dragover(False)
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event) -> None:
+        if event.mimeData().hasFormat(_NOTE_MIME):
+            raw = event.mimeData().data(_NOTE_MIME)
+            note_id = int(bytes(raw).decode())
+            event.acceptProposedAction()
+            self._set_dragover(False)
+            self.note_dropped.emit(note_id, self._folder_id)
+        else:
+            super().dropEvent(event)
+
+    def _set_dragover(self, on: bool) -> None:
+        self.setProperty("dragover", "true" if on else "false")
+        self.style().unpolish(self)
+        self.style().polish(self)
 
 
 class MainWindow(QMainWindow):
@@ -656,9 +702,15 @@ class MainWindow(QMainWindow):
         new_idx = 5 + len(self._folder_tab_ids)
         self._folder_tab_ids[folder.id] = new_idx
         self._folder_tab_ids_reverse[new_idx] = folder.id
-        btn = self._make_sidebar_btn(f"  📁  {folder.name}", new_idx)
+        btn = _FolderDropBtn(f"  📁  {folder.name}", folder.id)
+        btn.clicked.connect(lambda checked, idx=new_idx: self._switch_tab(idx))
+        btn.note_dropped.connect(self._on_note_moved_to_folder)
         self._sidebar_folder_container.layout().addWidget(btn)
         self._tab_buttons.append(btn)
+
+    def _on_note_moved_to_folder(self, note_id: int, folder_id: int) -> None:
+        self._note_service.update_note(note_id, folder_id=folder_id)
+        self._refresh_notes_preserve_selection()
 
     # ── CRUD actions ─────────────────────────────────────────────────────────
 

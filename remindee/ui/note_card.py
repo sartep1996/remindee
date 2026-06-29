@@ -3,10 +3,11 @@ from __future__ import annotations
 import random
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QRectF, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtCore import QMimeData, QPoint, Qt, QRectF, Signal
+from PySide6.QtGui import QColor, QDrag, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QSizePolicy, QVBoxLayout,
+    QApplication, QFrame, QHBoxLayout, QLabel, QMenu,
+    QPushButton, QSizePolicy, QVBoxLayout,
 )
 
 from remindee.models.note import Note
@@ -154,9 +155,40 @@ class NoteCard(QFrame):
         self.edit_requested.emit(self._note)
 
     def mousePressEvent(self, event) -> None:
-        if event.button() == Qt.MouseButton.RightButton:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start: QPoint = event.position().toPoint()
+        elif event.button() == Qt.MouseButton.RightButton:
             self._show_context_menu(event.globalPosition().toPoint())
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if not (event.buttons() & Qt.MouseButton.LeftButton):
+            super().mouseMoveEvent(event)
+            return
+        start = getattr(self, "_drag_start", None)
+        if start is None:
+            return
+        if (event.position().toPoint() - start).manhattanLength() < QApplication.startDragDistance():
+            return
+        self._start_note_drag()
+
+    def _start_note_drag(self) -> None:
+        if not self._note.id:
+            return
+        mime = QMimeData()
+        mime.setData("application/x-remindee-note-id",
+                     str(self._note.id).encode())
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        # Use a half-size grab of the card as the drag cursor
+        pix = self.grab()
+        w = max(pix.width() // 2, 1)
+        h = max(pix.height() // 2, 1)
+        scaled = pix.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatio,
+                             Qt.TransformationMode.SmoothTransformation)
+        drag.setPixmap(scaled)
+        drag.setHotSpot(QPoint(scaled.width() // 2, 8))
+        drag.exec(Qt.DropAction.MoveAction)
 
     def _show_context_menu(self, global_pos) -> None:
         menu = QMenu(self)
