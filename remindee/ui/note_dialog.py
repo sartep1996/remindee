@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 
-from PySide6.QtCore import Qt, QRectF, QSize, Signal
+from PySide6.QtCore import QEvent, Qt, QRectF, QSize, Signal
 from PySide6.QtGui import (
     QColor, QFont, QIcon, QPainter, QPen, QPixmap,
     QStandardItem, QStandardItemModel,
@@ -132,6 +132,7 @@ class NoteDialog(QDialog):
         self._note         = note
         self._folder_id    = folder_id
         self._color_label: str | None = note.color_label if note else None
+        self._last_text_focus: str = "title"  # "title" or "editor"
 
         # Art seed — mirrors NoteCard seed logic so dialog art matches the card
         if note and note.id:
@@ -411,6 +412,7 @@ class NoteDialog(QDialog):
         )
         # Font family set programmatically so _on_font_index_changed can override it
         self._title_edit.setFont(QFont("Marker Felt", _TITLE_FONT_SIZE, QFont.Weight.Bold))
+        self._title_edit.installEventFilter(self)
         layout.addWidget(self._title_edit)
 
         # Rich-text WYSIWYG editor
@@ -426,6 +428,7 @@ class NoteDialog(QDialog):
             "QScrollBar::handle:vertical { background: rgba(0,0,0,0.15); border-radius: 3px; }"
         )
         self._editor.currentCharFormatChanged.connect(self._sync_toolbar)
+        self._editor.installEventFilter(self)
         layout.addWidget(self._editor, stretch=1)
 
         return pane
@@ -531,6 +534,16 @@ class NoteDialog(QDialog):
 
         return bar
 
+    # ── Focus tracking ────────────────────────────────────────────────────────
+
+    def eventFilter(self, obj, event) -> bool:
+        if event.type() == QEvent.Type.FocusIn:
+            if obj is self._title_edit:
+                self._last_text_focus = "title"
+            elif obj is self._editor:
+                self._last_text_focus = "editor"
+        return super().eventFilter(obj, event)
+
     # ── Toolbar → editor sync ─────────────────────────────────────────────────
 
     def _sync_toolbar(self, fmt: QTextCharFormat) -> None:
@@ -568,10 +581,14 @@ class NoteDialog(QDialog):
         fname = item.data(Qt.ItemDataRole.UserRole)
         if not fname:
             return
-        # Applies only to selected text (or cursor position for new typing);
-        # the title field is intentionally excluded.
-        self._editor.setCurrentFont(QFont(fname))
-        self._editor.setFocus()
+        if self._last_text_focus == "title":
+            # Apply to the whole title field (QLineEdit has no per-selection font)
+            self._title_edit.setFont(QFont(fname, _TITLE_FONT_SIZE, QFont.Weight.Bold))
+            self._title_edit.setFocus()
+        else:
+            # Applies to selected text (or cursor position for new typing)
+            self._editor.setCurrentFont(QFont(fname))
+            self._editor.setFocus()
 
     def _on_size_changed(self, text: str) -> None:
         try:
