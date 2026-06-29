@@ -14,7 +14,9 @@ def _plain_text(content: str) -> str:
     """Return plain text from either HTML (rich notes) or legacy Markdown."""
     text = (content or "").strip()
     if text.startswith("<"):
-        # HTML from WYSIWYG editor — strip tags and decode entities
+        # Remove <style>…</style> blocks first (QTextEdit.toHtml embeds CSS like
+        # "p, li { white-space: pre-wrap; }" that leaks into plain-text extraction)
+        text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r"<[^>]+>", " ", text)
         text = (text.replace("&amp;", "&").replace("&lt;", "<")
                     .replace("&gt;", ">").replace("&nbsp;", " ").replace("&#160;", " "))

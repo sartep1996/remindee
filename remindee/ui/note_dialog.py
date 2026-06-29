@@ -10,7 +10,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QColorDialog, QComboBox, QDialog, QFrame,
-    QHBoxLayout, QLineEdit, QMessageBox, QPushButton, QTextEdit,
+    QHBoxLayout, QLineEdit, QMenu, QMessageBox, QPushButton, QTextEdit,
     QVBoxLayout, QWidget,
 )
 
@@ -44,6 +44,22 @@ _FONT_SIZES = [
 ]
 
 _TITLE_FONT_SIZE = 16
+
+# Word-style quick text-color palette
+_TEXT_COLORS: list[tuple[str, str]] = [
+    ("Black",      "#000000"),
+    ("Dark Red",   "#C00000"),
+    ("Red",        "#FF0000"),
+    ("Orange",     "#FF6B35"),
+    ("Gold",       "#FFD700"),
+    ("Dark Green", "#00A550"),
+    ("Teal",       "#008080"),
+    ("Blue",       "#0070C0"),
+    ("Dark Blue",  "#003087"),
+    ("Purple",     "#7030A0"),
+    ("Dark Gray",  "#404040"),
+    ("Gray",       "#808080"),
+]
 
 
 # ── Icon helpers ──────────────────────────────────────────────────────────────
@@ -355,9 +371,23 @@ class NoteDialog(QDialog):
         layout.addWidget(self._size_combo)
         layout.addWidget(_sep())
 
-        # Text color
+        # Text color — Word-style button with quick-color menu
         color_btn = _btn("A", "Text color")
-        color_btn.clicked.connect(self._pick_text_color)
+        color_menu = QMenu(color_btn)
+        for col_name, hex_col in _TEXT_COLORS:
+            pix = QPixmap(14, 14)
+            pix.fill(QColor(hex_col))
+            action = color_menu.addAction(QIcon(pix), col_name)
+            action.triggered.connect(
+                lambda _=False, c=hex_col: (
+                    self._editor.setTextColor(QColor(c)),
+                    self._editor.setFocus(),
+                )
+            )
+        color_menu.addSeparator()
+        more_action = color_menu.addAction("More colors…")
+        more_action.triggered.connect(self._pick_text_color)
+        color_btn.setMenu(color_menu)
         layout.addWidget(color_btn)
         layout.addWidget(_sep())
 

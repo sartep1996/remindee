@@ -29,7 +29,9 @@ def _first_line(content: str) -> str:
     import re
     text = content.strip()
     if text.startswith("<"):
-        # HTML: strip tags + decode entities
+        # Remove <style>…</style> blocks first so CSS text doesn't appear in preview
+        text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL | re.IGNORECASE)
+        # Strip remaining HTML tags and decode entities
         text = re.sub(r"<[^>]+>", " ", text)
         text = (text.replace("&amp;", "&").replace("&lt;", "<")
                     .replace("&gt;", ">").replace("&nbsp;", " ").replace("&#160;", " "))
