@@ -149,6 +149,66 @@ def _list_icon(numbered: bool, color: QColor, size: int = 18) -> QIcon:
     return QIcon(pix)
 
 
+class _RichTextEdit(QTextEdit):
+    """QTextEdit that embeds dragged/dropped images instead of inserting their URL.
+
+    Apple Photos drag includes both image data and a URL; Qt's default handler
+    picks up the URL first.  By overriding insertFromMimeData we check image
+    payloads (hasImage, raw format bytes, and file-URL images) before falling
+    back to the parent implementation.
+    """
+
+    _IMG_EXTS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"})
+
+    def insertFromMimeData(self, source) -> None:
+        # 1. hasImage() — covers Photos drag and clipboard paste
+        if source.hasImage():
+            raw = source.imageData()
+            if isinstance(raw, QImage):
+                img = raw
+            elif isinstance(raw, QPixmap):
+                img = raw.toImage()
+            else:
+                img = QImage()
+            if not img.isNull():
+                self._embed_qimage(img)
+                return
+
+        # 2. Raw binary formats — Photos often sends image/tiff or image/png bytes
+        for fmt in ("image/png", "image/jpeg", "image/tiff", "image/bmp"):
+            data = source.data(fmt)
+            if data and len(data) > 0:
+                img = QImage()
+                if img.loadFromData(data):
+                    self._embed_qimage(img)
+                    return
+
+        # 3. File URLs whose extension is a known image format (Finder, etc.)
+        if source.hasUrls():
+            for url in source.urls():
+                path = url.toLocalFile()
+                if os.path.splitext(path)[1].lower() in self._IMG_EXTS:
+                    img = QImage(path)
+                    if not img.isNull():
+                        self._embed_qimage(img)
+                        return
+
+        super().insertFromMimeData(source)
+
+    def _embed_qimage(self, img: QImage) -> None:
+        """Downscale if needed, then embed as a base64 data-URI PNG."""
+        if img.width() > 900:
+            img = img.scaledToWidth(900, Qt.TransformationMode.SmoothTransformation)
+        ba  = QByteArray()
+        buf = QBuffer(ba)
+        buf.open(QIODevice.OpenMode.WriteOnly)
+        img.save(buf, "PNG")
+        b64 = bytes(ba.toBase64()).decode()
+        cursor = self.textCursor()
+        cursor.insertHtml(f'<img src="data:image/png;base64,{b64}" />')
+        self.setTextCursor(cursor)
+
+
 def _dot_ss(hex_col: str, *, checked: bool) -> str:
     """Word-style square color swatch — thick dark border + checkmark when selected."""
     if checked:
@@ -503,8 +563,8 @@ class NoteDialog(QDialog):
         self._title_edit.installEventFilter(self)
         layout.addWidget(self._title_edit)
 
-        # Rich-text WYSIWYG editor
-        self._editor = QTextEdit()
+        # Rich-text WYSIWYG editor (subclass handles image drops)
+        self._editor = _RichTextEdit()
         self._editor.setPlaceholderText(
             "Start writing…\n\n"
             "Use the toolbar above for Bold, Italic, lists, and font changes.\n"
@@ -753,20 +813,7 @@ class NoteDialog(QDialog):
         if img.isNull():
             QMessageBox.warning(self, "Image Error", "Could not load the selected image.")
             return
-        # Downscale wide images so they fit the editor without horizontal scroll
-        if img.width() > 900:
-            img = img.scaledToWidth(900, Qt.TransformationMode.SmoothTransformation)
-
-        # Convert to PNG bytes via QBuffer → base64 → data URI embedded in HTML
-        ba  = QByteArray()
-        buf = QBuffer(ba)
-        buf.open(QIODevice.OpenMode.WriteOnly)
-        img.save(buf, "PNG")
-        b64 = bytes(ba.toBase64()).decode()
-
-        cursor = self._editor.textCursor()
-        cursor.insertHtml(f'<img src="data:image/png;base64,{b64}" />')
-        self._editor.setTextCursor(cursor)
+        self._editor._embed_qimage(img)
         self._editor.setFocus()
 
     # ── Insert table ──────────────────────────────────────────────────────────
