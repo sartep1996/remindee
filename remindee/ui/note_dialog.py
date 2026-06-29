@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+import random
+
+from PySide6.QtCore import Qt, QRectF, Signal
 from PySide6.QtGui import (
-    QColor, QFont, QTextCharFormat, QTextListFormat,
+    QColor, QFont, QPainter, QStandardItem, QStandardItemModel,
+    QTextCharFormat, QTextListFormat,
 )
 from PySide6.QtWidgets import (
-    QColorDialog, QComboBox, QDialog, QFontComboBox, QFrame,
+    QColorDialog, QComboBox, QDialog, QFrame,
     QHBoxLayout, QLineEdit, QPushButton, QTextEdit,
     QVBoxLayout, QWidget,
 )
@@ -13,6 +16,9 @@ from PySide6.QtWidgets import (
 from remindee.models.note import Note
 from remindee.models.user import User
 from remindee.services.note_service import NoteService
+from remindee.ui.reminder_card import (
+    _DARK_BASES, _SCHEMES, _STYLES, _draw_base,
+)
 
 _COLOR_DOTS: list[tuple[str, str]] = [
     ("orange", "#FF6B35"),
@@ -22,22 +28,37 @@ _COLOR_DOTS: list[tuple[str, str]] = [
     ("purple", "#A855F7"),
 ]
 
+_FONT_GROUPS = [
+    ("Handwritten", ["Marker Felt", "Bradley Hand", "Chalkboard SE", "Zapfino"]),
+    ("Traditional", ["Times New Roman", "Baskerville", "Georgia", "Palatino"]),
+    ("Modern",      ["Helvetica Neue", "Arial", "Futura", "Verdana"]),
+    ("Monospace",   ["Courier New", "Menlo", "Monaco"]),
+]
+
+_FONT_OPTIONS = [f for _, fonts in _FONT_GROUPS for f in fonts]
+
 _FONT_SIZES = [
     "8", "9", "10", "11", "12", "14", "16",
-    "18", "20", "24", "28", "32", "36", "48", "64", "72",
+    "18", "20", "24", "28", "32", "36", "48",
 ]
 
 
 def _dot_ss(hex_col: str, *, checked: bool) -> str:
-    border = "2px solid #1C0800" if checked else "1.5px solid rgba(0,0,0,0.18)"
+    if checked:
+        return (
+            f"QPushButton {{ background: {hex_col}; border: 3px solid white;"
+            f" border-radius: 12px; }}"
+            f"QPushButton:hover {{ border: 3px solid rgba(255,255,255,0.85); }}"
+        )
     return (
-        f"QPushButton {{ background: {hex_col}; border: {border}; border-radius: 11px; }}"
-        f"QPushButton:hover {{ border: 2px solid rgba(0,0,0,0.45); }}"
+        f"QPushButton {{ background: {hex_col}; border: 1.5px solid rgba(0,0,0,0.18);"
+        f" border-radius: 12px; }}"
+        f"QPushButton:hover {{ border: 2px solid rgba(0,0,0,0.40); }}"
     )
 
 
 class NoteDialog(QDialog):
-    """WYSIWYG rich-text note editor."""
+    """WYSIWYG rich-text note editor — painted art background matching ReminderDialog."""
 
     note_saved = Signal()
 
@@ -57,11 +78,23 @@ class NoteDialog(QDialog):
         self._folder_id    = folder_id
         self._color_label: str | None = note.color_label if note else None
 
-        self.setModal(True)
-        self.setMinimumSize(700, 540)
-        self.resize(760, 580)
+        # Art seed — mirrors NoteCard seed logic exactly so dialog art matches the card
+        if note and note.id:
+            seed = note.id & 0x7FFFFFFF
+        else:
+            uid  = getattr(user, "id", None) or 0
+            seed = (uid * 1_337 + 42) & 0x7FFFFFFF or 5
+        self._art_seed    = seed
+        self._art_palette = _SCHEMES[seed % len(_SCHEMES)]
+        self._art_dark    = (seed * 11 + 5) % 5 == 0
+        self._art_style   = (seed * 17 + 5) % len(_STYLES)
+
+        self.setAutoFillBackground(False)
+        self.setObjectName("NoteDialog")
         self.setWindowTitle("Edit Note" if note else "New Note")
-        self.setStyleSheet("QDialog { background: white; }")
+        self.setMinimumSize(700, 560)
+        self.resize(760, 600)
+        self.setModal(True)
 
         self._build()
 
@@ -77,7 +110,70 @@ class NoteDialog(QDialog):
 
         self._title_edit.setFocus()
 
-    # ── Build ─────────────────────────────────────────────────────────────────
+    # ── Custom background (matches ReminderDialog exactly) ────────────────────
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        r   = QRectF(self.rect())
+        rng = random.Random(self._art_seed)
+
+        if self._art_dark:
+            base = _DARK_BASES[self._art_seed % len(_DARK_BASES)]
+            p.fillRect(r, QColor(base.red(), base.green(), base.blue(), 255))
+        else:
+            p.fillRect(r, QColor(255, 252, 248, 255))
+            _draw_base(p, r, rng, self._art_palette, self._art_seed)
+
+        _STYLES[self._art_style](p, r, rng, self._art_palette)
+
+        # Heavy veil — more than the card so toolbar and form fields stay readable
+        if self._art_dark:
+            p.fillRect(r, QColor(0, 0, 0, 148))
+        else:
+            p.fillRect(r, QColor(255, 255, 255, 155))
+
+    # ── Color helpers ─────────────────────────────────────────────────────────
+
+    def _text_col(self) -> str:
+        return "rgba(238,222,205,0.97)" if self._art_dark else "#1C0800"
+
+    def _input_ss(self) -> str:
+        """Semi-opaque input background so form fields are readable over the art."""
+        if self._art_dark:
+            return (
+                "background: rgba(255,255,255,0.10); border: 1.5px solid rgba(255,255,255,0.18);"
+                " border-radius: 10px; color: rgba(238,222,205,0.97); font-size: 14px;"
+                " padding: 11px 14px;"
+            )
+        return (
+            "background: rgba(255,255,255,0.82); border: 1.5px solid rgba(255,107,53,0.22);"
+            " border-radius: 10px; color: #1C0800; font-size: 14px;"
+            " padding: 11px 14px;"
+        )
+
+    def _combo_ss(self) -> str:
+        if self._art_dark:
+            return (
+                "QComboBox { background: rgba(255,255,255,0.10);"
+                " border: 1.5px solid rgba(255,255,255,0.18);"
+                " border-radius: 7px; color: rgba(238,222,205,0.97);"
+                " font-size: 12px; padding: 3px 8px; }"
+                "QComboBox QAbstractItemView {"
+                " background: rgba(28,18,42,0.97); color: rgba(238,222,205,0.97);"
+                " selection-background-color: rgba(255,255,255,0.20); }"
+            )
+        return (
+            "QComboBox { background: rgba(255,255,255,0.82);"
+            " border: 1.5px solid rgba(255,107,53,0.22);"
+            " border-radius: 7px; color: #1C0800; font-size: 12px; padding: 3px 8px; }"
+            "QComboBox QAbstractItemView {"
+            " background: rgba(255,252,248,0.97); color: #1C0800;"
+            " selection-background-color: #FF6B35; selection-color: white; }"
+        )
+
+    # ── Layout ────────────────────────────────────────────────────────────────
 
     def _build(self) -> None:
         root = QVBoxLayout(self)
@@ -85,65 +181,36 @@ class NoteDialog(QDialog):
         root.setSpacing(0)
 
         root.addWidget(self._build_toolbar())
-
-        # Content pane (white)
-        content = QWidget()
-        content.setStyleSheet("background: white;")
-        cl = QVBoxLayout(content)
-        cl.setContentsMargins(24, 16, 24, 8)
-        cl.setSpacing(6)
-
-        # Large title input
-        self._title_edit = QLineEdit()
-        self._title_edit.setPlaceholderText("Title…")
-        self._title_edit.setStyleSheet(
-            "QLineEdit {"
-            " font-size: 22px; font-weight: 700; font-family: 'Marker Felt', serif;"
-            " border: none; border-bottom: 1.5px solid rgba(0,0,0,0.10);"
-            " background: transparent; padding: 6px 2px 12px 2px; color: #1C0800;"
-            "}"
-            "QLineEdit:focus { border-bottom: 2px solid #FF6B35; }"
-        )
-        cl.addWidget(self._title_edit)
-
-        # Rich-text WYSIWYG body
-        self._editor = QTextEdit()
-        self._editor.setPlaceholderText(
-            "Start writing…\n\n"
-            "Use the toolbar above for Bold, Italic, lists, and font changes."
-        )
-        self._editor.setAcceptRichText(True)
-        self._editor.setStyleSheet(
-            "QTextEdit {"
-            " background: white; border: none;"
-            " font-size: 14px; font-family: -apple-system, 'Helvetica Neue', sans-serif;"
-            " color: #1C0800; padding: 4px 0;"
-            "}"
-            "QScrollBar:vertical { width: 6px; background: transparent; }"
-            "QScrollBar::handle:vertical { background: rgba(0,0,0,0.15); border-radius: 3px; }"
-        )
-        self._editor.currentCharFormatChanged.connect(self._sync_toolbar)
-        cl.addWidget(self._editor, stretch=1)
-
-        root.addWidget(content, stretch=1)
+        root.addWidget(self._build_content(), stretch=1)
         root.addWidget(self._build_bottom())
 
     def _build_toolbar(self) -> QWidget:
         bar = QWidget()
-        bar.setFixedHeight(44)
-        bar.setStyleSheet(
-            "QWidget { background: #FFF8F2; border-bottom: 1px solid rgba(0,0,0,0.09); }"
-        )
+        bar.setFixedHeight(46)
+        if self._art_dark:
+            bar.setStyleSheet(
+                "background: rgba(0,0,0,0.25);"
+                " border-bottom: 1px solid rgba(255,255,255,0.10);"
+            )
+        else:
+            bar.setStyleSheet(
+                "background: rgba(255,255,255,0.30);"
+                " border-bottom: 1px solid rgba(0,0,0,0.08);"
+            )
+
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(10, 0, 10, 0)
         layout.setSpacing(2)
+
+        tc = self._text_col()
 
         def _sep() -> QFrame:
             f = QFrame()
             f.setFrameShape(QFrame.Shape.VLine)
             f.setFixedWidth(1)
-            f.setStyleSheet("background: rgba(0,0,0,0.10); border: none;")
             f.setFixedHeight(22)
+            col = "rgba(255,255,255,0.20)" if self._art_dark else "rgba(0,0,0,0.12)"
+            f.setStyleSheet(f"background: {col}; border: none;")
             return f
 
         def _btn(label: str, tip: str, *, checkable: bool = False,
@@ -155,14 +222,14 @@ class NoteDialog(QDialog):
             b.setMinimumWidth(28)
             if bold:
                 b.setFont(QFont("Helvetica Neue", 13, QFont.Weight.Bold))
+            hover = "rgba(255,255,255,0.20)" if self._art_dark else "rgba(255,107,53,0.15)"
+            chk   = "rgba(255,255,255,0.30)" if self._art_dark else "rgba(255,107,53,0.22)"
             b.setStyleSheet(
-                "QPushButton {"
-                " background: transparent; border: none; border-radius: 5px;"
-                " font-size: 13px; color: #2C0E00; padding: 0 6px;"
-                "}"
-                "QPushButton:hover   { background: rgba(255,107,53,0.15); }"
-                "QPushButton:checked { background: rgba(255,107,53,0.22); color: #D94010; }"
-                "QPushButton:pressed { background: rgba(255,107,53,0.30); }"
+                f"QPushButton {{ background: transparent; border: none; border-radius: 5px;"
+                f" font-size: 13px; color: {tc}; padding: 0 6px; }}"
+                f"QPushButton:hover   {{ background: {hover}; }}"
+                f"QPushButton:checked {{ background: {chk}; }}"
+                f"QPushButton:pressed {{ background: {hover}; }}"
             )
             return b
 
@@ -175,36 +242,37 @@ class NoteDialog(QDialog):
         layout.addWidget(redo)
         layout.addWidget(_sep())
 
-        # Font family
-        self._font_combo = QFontComboBox()
-        self._font_combo.setFixedWidth(155)
+        # Font family — grouped QComboBox avoids macOS QFontComboBox popup issues
+        self._font_combo = QComboBox()
+        self._font_combo.setFixedWidth(152)
         self._font_combo.setFixedHeight(30)
-        self._font_combo.setStyleSheet(
-            "QFontComboBox {"
-            " background: white; border: 1px solid rgba(0,0,0,0.14);"
-            " border-radius: 5px; padding: 0 6px; font-size: 12px; color: #1C0800;"
-            "}"
-            "QFontComboBox::drop-down { border: none; width: 16px; }"
-            "QFontComboBox QAbstractItemView { background: white; border: 1px solid #ddd; }"
-        )
-        self._font_combo.currentFontChanged.connect(self._on_font_changed)
+        self._font_combo.setCursor(Qt.CursorShape.PointingHandCursor)
+        font_model = QStandardItemModel()
+        for group_name, fonts in _FONT_GROUPS:
+            hdr = QStandardItem(f"  {group_name}")
+            hdr.setEnabled(False)
+            hdr.setFont(QFont("Helvetica Neue", 10))
+            font_model.appendRow(hdr)
+            for fname in fonts:
+                item = QStandardItem(f"  {fname}")
+                item.setFont(QFont(fname, 12))
+                item.setData(fname, Qt.ItemDataRole.UserRole)
+                font_model.appendRow(item)
+        self._font_combo.setModel(font_model)
+        self._font_combo.setCurrentIndex(1)
+        self._font_combo.setStyleSheet(self._combo_ss())
+        self._font_combo.currentIndexChanged.connect(self._on_font_index_changed)
         layout.addWidget(self._font_combo)
-        layout.addSpacing(4)
+        layout.addSpacing(3)
 
         # Font size
         self._size_combo = QComboBox()
         self._size_combo.addItems(_FONT_SIZES)
         self._size_combo.setCurrentText("14")
-        self._size_combo.setFixedWidth(58)
+        self._size_combo.setFixedWidth(60)
         self._size_combo.setFixedHeight(30)
         self._size_combo.setEditable(True)
-        self._size_combo.setStyleSheet(
-            "QComboBox {"
-            " background: white; border: 1px solid rgba(0,0,0,0.14);"
-            " border-radius: 5px; padding: 0 4px; font-size: 12px; color: #1C0800;"
-            "}"
-            "QComboBox::drop-down { border: none; width: 14px; }"
-        )
+        self._size_combo.setStyleSheet(self._combo_ss())
         self._size_combo.currentTextChanged.connect(self._on_size_changed)
         layout.addWidget(self._size_combo)
         layout.addWidget(_sep())
@@ -229,91 +297,145 @@ class NoteDialog(QDialog):
         layout.addWidget(self._underline_btn)
         layout.addWidget(_sep())
 
-        # Alignment
+        # Alignment — ← ↔ → are immediately legible, unlike ⬛︎ ▬ ⬜︎
         for icon, tip, flag in (
-            ("⬛︎", "Left",   Qt.AlignmentFlag.AlignLeft),
-            ("▬",  "Centre", Qt.AlignmentFlag.AlignHCenter),
-            ("⬜︎", "Right",  Qt.AlignmentFlag.AlignRight),
+            ("←", "Align Left",   Qt.AlignmentFlag.AlignLeft),
+            ("↔", "Align Centre", Qt.AlignmentFlag.AlignHCenter),
+            ("→", "Align Right",  Qt.AlignmentFlag.AlignRight),
         ):
-            b = _btn(icon, f"Align {tip}")
+            b = _btn(icon, tip)
             b.clicked.connect(lambda _, f=flag: self._editor.setAlignment(f))
             layout.addWidget(b)
         layout.addWidget(_sep())
 
         # Lists
         bullet_btn   = _btn("•—", "Bullet list")
-        numbered_btn = _btn("1.", "Numbered list")
+        numbered_btn = _btn("1.",  "Numbered list")
         bullet_btn.clicked.connect(self._toggle_bullet)
         numbered_btn.clicked.connect(self._toggle_numbered)
         layout.addWidget(bullet_btn)
         layout.addWidget(numbered_btn)
-
         layout.addStretch()
         return bar
 
+    def _build_content(self) -> QWidget:
+        pane = QWidget()
+        pane.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(pane)
+        layout.setContentsMargins(24, 16, 24, 8)
+        layout.setSpacing(8)
+
+        # Title — inherits _input_ss but bumped font size + family
+        self._title_edit = QLineEdit()
+        self._title_edit.setPlaceholderText("Title…")
+        self._title_edit.setStyleSheet(
+            f"QLineEdit {{ {self._input_ss()}"
+            " font-size: 20px; font-weight: 700; font-family: 'Marker Felt', serif; }"
+            f"QLineEdit:focus {{ border-color: {'rgba(255,255,255,0.40)' if self._art_dark else '#FF6B35'}; }}"
+        )
+        layout.addWidget(self._title_edit)
+
+        # Rich-text WYSIWYG editor
+        self._editor = QTextEdit()
+        self._editor.setPlaceholderText(
+            "Start writing…\n\n"
+            "Use the toolbar above for Bold, Italic, lists, and font changes."
+        )
+        self._editor.setAcceptRichText(True)
+        self._editor.setStyleSheet(
+            f"QTextEdit {{ {self._input_ss()} }}"
+            "QScrollBar:vertical { width: 6px; background: transparent; }"
+            "QScrollBar::handle:vertical { background: rgba(0,0,0,0.15); border-radius: 3px; }"
+        )
+        self._editor.currentCharFormatChanged.connect(self._sync_toolbar)
+        layout.addWidget(self._editor, stretch=1)
+
+        return pane
+
     def _build_bottom(self) -> QWidget:
         bar = QWidget()
-        bar.setFixedHeight(50)
-        bar.setStyleSheet(
-            "QWidget { background: #FFF8F2; border-top: 1px solid rgba(0,0,0,0.09); }"
-        )
+        bar.setFixedHeight(52)
+        if self._art_dark:
+            bar.setStyleSheet(
+                "background: rgba(0,0,0,0.25);"
+                " border-top: 1px solid rgba(255,255,255,0.10);"
+            )
+        else:
+            bar.setStyleSheet(
+                "background: rgba(255,255,255,0.30);"
+                " border-top: 1px solid rgba(0,0,0,0.08);"
+            )
+
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(16, 0, 16, 0)
         layout.setSpacing(8)
 
-        # Note color-label dots
+        # Color dots — selected dot gets a prominent white border so the change is obvious
         self._dot_btns: dict[str, QPushButton] = {}
         for name, hex_col in _COLOR_DOTS:
             dot = QPushButton()
-            dot.setFixedSize(22, 22)
+            dot.setFixedSize(24, 24)
             dot.setCheckable(True)
             dot.setChecked(self._color_label == name)
             dot.setToolTip(name.capitalize())
             dot.setStyleSheet(_dot_ss(hex_col, checked=(self._color_label == name)))
+            dot.setCursor(Qt.CursorShape.PointingHandCursor)
             dot.clicked.connect(lambda _, n=name, h=hex_col: self._pick_color(n, h))
             self._dot_btns[name] = dot
             layout.addWidget(dot)
 
         layout.addStretch()
 
+        # → Reminder convert
         convert_btn = QPushButton("→ Reminder")
-        convert_btn.setFixedHeight(34)
-        convert_btn.setStyleSheet(
-            "QPushButton {"
-            " background: rgba(255,107,53,0.10); border: 1px solid rgba(255,107,53,0.30);"
-            " border-radius: 8px; font-size: 12px; font-weight: 600; color: #FF6B35; padding: 0 14px;"
-            "}"
-            "QPushButton:hover { background: rgba(255,107,53,0.22); }"
-        )
+        convert_btn.setFixedHeight(36)
+        if self._art_dark:
+            convert_btn.setStyleSheet(
+                "QPushButton { background: rgba(255,255,255,0.12);"
+                " border: 1px solid rgba(255,255,255,0.25); border-radius: 9px;"
+                " font-size: 12px; font-weight: 600;"
+                " color: rgba(238,222,205,0.90); padding: 0 14px; }"
+                "QPushButton:hover { background: rgba(255,255,255,0.22); }"
+            )
+        else:
+            convert_btn.setStyleSheet(
+                "QPushButton { background: rgba(255,107,53,0.10);"
+                " border: 1px solid rgba(255,107,53,0.30); border-radius: 9px;"
+                " font-size: 12px; font-weight: 600; color: #FF6B35; padding: 0 14px; }"
+                "QPushButton:hover { background: rgba(255,107,53,0.22); }"
+            )
         convert_btn.clicked.connect(self._convert_to_reminder)
         layout.addWidget(convert_btn)
 
-        def _action_btn(label: str) -> QPushButton:
-            b = QPushButton(label)
-            b.setFixedHeight(34)
-            b.setMinimumWidth(80)
-            b.setStyleSheet(
-                "QPushButton {"
-                " background: white; border: 1.5px solid rgba(0,0,0,0.15);"
-                " border-radius: 8px; font-size: 13px; font-weight: 500; color: #2C0E00;"
-                " padding: 0 16px;"
-                "}"
-                "QPushButton:hover { border-color: rgba(0,0,0,0.30); }"
+        # Cancel
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setFixedHeight(36)
+        cancel_btn.setMinimumWidth(80)
+        if self._art_dark:
+            cancel_btn.setStyleSheet(
+                "QPushButton { background: rgba(255,255,255,0.10);"
+                " border: 1.5px solid rgba(255,255,255,0.22); border-radius: 9px;"
+                " font-size: 13px; color: rgba(238,222,205,0.90); padding: 0 16px; }"
+                "QPushButton:hover { background: rgba(255,255,255,0.20); }"
             )
-            return b
-
-        cancel_btn = _action_btn("Cancel")
+        else:
+            cancel_btn.setStyleSheet(
+                "QPushButton { background: rgba(255,255,255,0.70);"
+                " border: 1.5px solid rgba(0,0,0,0.15); border-radius: 9px;"
+                " font-size: 13px; color: #2C0E00; padding: 0 16px; }"
+                "QPushButton:hover { background: rgba(255,255,255,0.90); }"
+            )
         cancel_btn.clicked.connect(self.reject)
         layout.addWidget(cancel_btn)
 
-        save_btn = _action_btn("Save")
+        # Save (primary)
+        save_btn = QPushButton("Save")
         save_btn.setDefault(True)
+        save_btn.setFixedHeight(36)
+        save_btn.setMinimumWidth(80)
         save_btn.setStyleSheet(
-            "QPushButton {"
-            " background: #FF6B35; border: none;"
-            " border-radius: 8px; font-size: 13px; font-weight: 700; color: white;"
-            " padding: 0 20px;"
-            "}"
+            "QPushButton { background: #FF6B35; border: none; border-radius: 9px;"
+            " font-size: 13px; font-weight: 700; color: white; padding: 0 20px; }"
             "QPushButton:hover   { background: #E85A25; }"
             "QPushButton:pressed { background: #D04A18; }"
         )
@@ -325,7 +447,6 @@ class NoteDialog(QDialog):
     # ── Toolbar → editor sync ─────────────────────────────────────────────────
 
     def _sync_toolbar(self, fmt: QTextCharFormat) -> None:
-        """Update toolbar to reflect the format at the current cursor."""
         for widget, value in (
             (self._bold_btn,      fmt.fontWeight() >= QFont.Weight.Bold),
             (self._italic_btn,    fmt.fontItalic()),
@@ -335,9 +456,15 @@ class NoteDialog(QDialog):
             widget.setChecked(value)
             widget.blockSignals(False)
 
-        self._font_combo.blockSignals(True)
-        self._font_combo.setCurrentFont(fmt.font())
-        self._font_combo.blockSignals(False)
+        fname = fmt.font().family()
+        if fname in _FONT_OPTIONS:
+            for i in range(self._font_combo.model().rowCount()):
+                item = self._font_combo.model().item(i)
+                if item and item.data(Qt.ItemDataRole.UserRole) == fname:
+                    self._font_combo.blockSignals(True)
+                    self._font_combo.setCurrentIndex(i)
+                    self._font_combo.blockSignals(False)
+                    break
 
         size = fmt.fontPointSize()
         if size > 0:
@@ -347,8 +474,14 @@ class NoteDialog(QDialog):
 
     # ── Toolbar actions ───────────────────────────────────────────────────────
 
-    def _on_font_changed(self, font: QFont) -> None:
-        self._editor.setCurrentFont(font)
+    def _on_font_index_changed(self, idx: int) -> None:
+        item = self._font_combo.model().item(idx)
+        if item is None:
+            return
+        fname = item.data(Qt.ItemDataRole.UserRole)
+        if not fname:
+            return
+        self._editor.setCurrentFont(QFont(fname))
         self._editor.setFocus()
 
     def _on_size_changed(self, text: str) -> None:
@@ -379,7 +512,7 @@ class NoteDialog(QDialog):
         cursor  = self._editor.textCursor()
         current = cursor.currentList()
         if current and current.format().style() == QTextListFormat.Style.ListDisc:
-            cursor.setBlockFormat(cursor.blockFormat())   # remove indent / list
+            cursor.setBlockFormat(cursor.blockFormat())
         else:
             fmt = QTextListFormat()
             fmt.setStyle(QTextListFormat.Style.ListDisc)

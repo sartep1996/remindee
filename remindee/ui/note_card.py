@@ -15,6 +15,14 @@ from remindee.ui.reminder_card import (
     _OutlinedLabel, _draw_base, _draw_grain,
 )
 
+_COLOR_HEX: dict[str, str] = {
+    "orange": "#FF6B35",
+    "red":    "#EF4444",
+    "green":  "#22C55E",
+    "blue":   "#3B82F6",
+    "purple": "#A855F7",
+}
+
 
 def _first_line(content: str) -> str:
     """Return the first non-empty line of note content, stripping HTML or markdown."""
@@ -182,6 +190,12 @@ class NoteCard(QFrame):
 
         veil = QColor(0, 0, 0, 55) if self._is_dark else QColor(255, 255, 255, 72)
         p.fillPath(clip, veil)
+
+        # Color-label strip — 7 px left edge, visible after color is set in NoteDialog
+        if self._note.color_label and self._note.color_label in _COLOR_HEX:
+            strip = QColor(_COLOR_HEX[self._note.color_label])
+            strip.setAlpha(215)
+            p.fillRect(0, 0, 7, self.height(), strip)
 
         p.setClipping(False)
         border_alpha = 220 if self._hovered else (110 if self._is_dark else 70)
