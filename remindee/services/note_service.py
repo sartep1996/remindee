@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from sqlalchemy import or_
+from sqlalchemy import nullslast, or_
 
 from remindee.models.note import Note
 from remindee.models.note_folder import NoteFolder
@@ -35,12 +35,20 @@ def _plain_text(content: str) -> str:
 class NoteService:
     # ── Notes ────────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _note_order():
+        """Pinned notes first, then newest-updated first; nulls last."""
+        return (
+            Note.is_pinned.desc(),
+            nullslast(Note.updated_at.desc()),
+        )
+
     def get_all_notes(self, user_id: int) -> list[Note]:
         with get_session() as session:
             notes = (
                 session.query(Note)
                 .filter(Note.user_id == user_id)
-                .order_by(Note.updated_at.desc())
+                .order_by(*self._note_order())
                 .all()
             )
             for note in notes:
@@ -52,7 +60,7 @@ class NoteService:
             notes = (
                 session.query(Note)
                 .filter(Note.user_id == user_id, Note.folder_id == folder_id)
-                .order_by(Note.updated_at.desc())
+                .order_by(*self._note_order())
                 .all()
             )
             for note in notes:
@@ -64,7 +72,7 @@ class NoteService:
             notes = (
                 session.query(Note)
                 .filter(Note.user_id == user_id, Note.is_pinned.is_(True))
-                .order_by(Note.updated_at.desc())
+                .order_by(nullslast(Note.updated_at.desc()))
                 .all()
             )
             for note in notes:
@@ -171,7 +179,7 @@ class NoteService:
                         Note.body_md.ilike(pattern),
                     ),
                 )
-                .order_by(Note.updated_at.desc())
+                .order_by(*self._note_order())
                 .all()
             )
             for note in notes:
