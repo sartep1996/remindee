@@ -16,15 +16,23 @@ from remindee.ui.reminder_card import (
 )
 
 
-def _first_line(md: str) -> str:
-    """Return the first non-empty, non-header line of markdown as plain text."""
+def _first_line(content: str) -> str:
+    """Return the first non-empty line of note content, stripping HTML or markdown."""
     import re
-    for line in md.splitlines():
-        line = line.strip()
-        line = re.sub(r'^#{1,6}\s*', '', line)
-        line = re.sub(r'(\*{1,3}|_{1,3})(.*?)\1', r'\2', line)
-        line = re.sub(r'`([^`]*)`', r'\1', line)
-        if line:
+    text = content.strip()
+    if text.startswith("<"):
+        # HTML: strip tags + decode entities
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = (text.replace("&amp;", "&").replace("&lt;", "<")
+                    .replace("&gt;", ">").replace("&nbsp;", " ").replace("&#160;", " "))
+    else:
+        # Legacy markdown: strip syntax
+        text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
+        text = re.sub(r"(\*{1,3}|_{1,3})(.*?)\1", r"\2", text)
+        text = re.sub(r"`([^`]*)`", r"\1", text)
+    for line in text.splitlines():
+        line = " ".join(line.split())
+        if line and not line.startswith("<!"):
             return line
     return ""
 

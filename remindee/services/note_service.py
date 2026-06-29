@@ -10,25 +10,24 @@ from remindee.models.reminder import Reminder
 from remindee.utils.database import get_session
 
 
-def _plain_text(md: str) -> str:
-    """Strip common Markdown syntax and return plain text."""
-    # Remove fenced code blocks
-    text = re.sub(r"```.*?```", "", md, flags=re.DOTALL)
-    # Remove inline code
+def _plain_text(content: str) -> str:
+    """Return plain text from either HTML (rich notes) or legacy Markdown."""
+    text = (content or "").strip()
+    if text.startswith("<"):
+        # HTML from WYSIWYG editor — strip tags and decode entities
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = (text.replace("&amp;", "&").replace("&lt;", "<")
+                    .replace("&gt;", ">").replace("&nbsp;", " ").replace("&#160;", " "))
+        return " ".join(text.split())
+    # Legacy Markdown
+    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
     text = re.sub(r"`[^`]*`", "", text)
-    # Remove images: ![alt](url)
     text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)
-    # Remove links: [text](url) — keep the text
     text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
-    # Remove ATX headings markers
     text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
-    # Remove bold/italic markers
     text = re.sub(r"(\*{1,3}|_{1,3})(.*?)\1", r"\2", text)
-    # Remove horizontal rules
     text = re.sub(r"^[-*_]{3,}\s*$", "", text, flags=re.MULTILINE)
-    # Collapse excess whitespace
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
 class NoteService:
