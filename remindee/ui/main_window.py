@@ -29,10 +29,13 @@ from remindee.models.user import User
 from remindee.services.note_service import NoteService
 from remindee.services.notification_service import NotificationService
 from remindee.services.scheduler_service import SchedulerService
+from remindee.services.task_service import TaskService
 from remindee.ui.note_card import NoteCard
 from remindee.ui.note_dialog import NoteDialog
 from remindee.ui.reminder_card import ReminderCard
 from remindee.ui.reminder_dialog import ReminderDialog
+from remindee.ui.task_card import TaskCard
+from remindee.ui.task_dialog import TaskDialog
 from remindee.ui.styles import apply_calendar_palette
 from remindee.utils.database import get_session
 
@@ -270,11 +273,16 @@ class MainWindow(QMainWindow):
         self._user = user
         self._scheduler = scheduler
         self._active_tab = 0
+        self._in_tasks   = False
 
         # Notes state
         self._note_service = NoteService()
         self._folder_tab_ids: dict[int, int] = {}          # folder_id → tab_index
         self._folder_tab_ids_reverse: dict[int, int] = {}  # tab_index → folder_id
+
+        # Tasks state
+        self._task_service = TaskService()
+        self._task_btn: QPushButton | None = None
 
         self.setWindowTitle("REMINDEE")
         self.setMinimumSize(940, 640)
@@ -362,6 +370,10 @@ class MainWindow(QMainWindow):
         self._notes_panel = self._build_notes_view()
         self._content_stack.addWidget(self._notes_panel)
 
+        # Tasks view (index 5)
+        self._tasks_panel = self._build_tasks_view()
+        self._content_stack.addWidget(self._tasks_panel)
+
         root_layout.addWidget(self._content_stack, stretch=1)
 
         # FAB — floating button parented to the central widget
@@ -436,6 +448,22 @@ class MainWindow(QMainWindow):
         add_folder_btn.clicked.connect(self._on_add_folder)
         layout.addWidget(add_folder_btn)
 
+        # ── Tasks section separator ──────────────────────────────────────────
+        tasks_sep = QFrame()
+        tasks_sep.setFrameShape(QFrame.Shape.HLine)
+        tasks_sep.setStyleSheet("color: rgba(255,255,255,0.30); margin: 6px 0;")
+        layout.addWidget(tasks_sep)
+
+        tasks_label = QLabel("TASKS")
+        tasks_label.setObjectName("SectionLabel")
+        layout.addWidget(tasks_label)
+
+        self._task_btn = QPushButton("  ☑  All Tasks")
+        self._task_btn.setObjectName("SidebarBtn")
+        self._task_btn.setCheckable(False)
+        self._task_btn.clicked.connect(self._switch_to_tasks)
+        layout.addWidget(self._task_btn)
+
         layout.addStretch()
 
         # Settings button
@@ -508,6 +536,91 @@ class MainWindow(QMainWindow):
         container._view_label   = "Notes"
 
         return container
+
+    def _build_tasks_view(self) -> QWidget:
+        container = QWidget()
+        container.setObjectName("ContentArea")
+        container.setAutoFillBackground(False)
+        outer = QVBoxLayout(container)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        header = QWidget()
+        header.setObjectName("ContentArea")
+        header.setAutoFillBackground(False)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(28, 14, 28, 4)
+        header_layout.setSpacing(12)
+
+        title = QLabel("Tasks")
+        title.setObjectName("ViewTitle")
+        header_layout.addWidget(title, stretch=1)
+        outer.addWidget(header)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setAutoFillBackground(False)
+        scroll.viewport().setAutoFillBackground(False)
+
+        scroll_content = QWidget()
+        scroll_content.setObjectName("ContentArea")
+        scroll_content.setAutoFillBackground(False)
+
+        cards_layout = QVBoxLayout(scroll_content)
+        cards_layout.setContentsMargins(28, 14, 28, 90)
+        cards_layout.setSpacing(12)
+        cards_layout.addStretch()
+
+        scroll.setWidget(scroll_content)
+        outer.addWidget(scroll)
+
+        container._cards_layout = cards_layout
+        return container
+
+    def _refresh_tasks(self) -> None:
+        layout = self._tasks_panel._cards_layout
+        while layout.count() > 1:
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        tasks = self._task_service.get_all_for_user(self._user.id)
+        if not tasks:
+            empty = QLabel("No tasks yet. Click + to add one!")
+            empty.setObjectName("EmptyStateLabel")
+            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.insertWidget(0, empty)
+            return
+
+        for i, task in enumerate(tasks):
+            card = TaskCard(task)
+            card.edit_requested.connect(self._on_task_edit)
+            card.delete_requested.connect(self._on_task_delete)
+            card.subtask_toggled.connect(self._on_subtask_toggled)
+            layout.insertWidget(i, card)
+
+    def _on_task_add(self) -> None:
+        dlg = TaskDialog(self._user, self._task_service, parent=self)
+        dlg.task_saved.connect(lambda _: self._refresh_tasks())
+        dlg.exec()
+
+    def _on_task_edit(self, task) -> None:
+        fresh = self._task_service.get_task(task.id)
+        dlg = TaskDialog(self._user, self._task_service, task=fresh or task, parent=self)
+        dlg.task_saved.connect(lambda _: self._refresh_tasks())
+        dlg.exec()
+
+    def _on_task_delete(self, task) -> None:
+        dlg = _ConfirmDialog(f'Delete task "{task.title}"?', parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._task_service.delete_task(task.id)
+        self._refresh_tasks()
+
+    def _on_subtask_toggled(self, task_id: int, idx: int, done: bool) -> None:
+        self._task_service.toggle_subtask(task_id, idx, done)
+        self._refresh_tasks()
 
     def _build_list_view(self, label: str) -> QWidget:
         container = QWidget()
@@ -607,12 +720,11 @@ class MainWindow(QMainWindow):
 
     def _switch_tab(self, index: int) -> None:
         self._active_tab = index
+        self._in_tasks   = False
         if index <= 3:
-            # Reminder views live at stack indices 0–3
             self._content_stack.setCurrentIndex(index)
             self._refresh_current_view()
         else:
-            # Notes view is at stack index 4
             self._content_stack.setCurrentIndex(4)
             if index == 4:
                 self._refresh_notes()
@@ -620,13 +732,22 @@ class MainWindow(QMainWindow):
                 self._refresh_notes(folder_id=self._folder_tab_ids_reverse[index])
         self._update_tab_buttons(index)
 
+    def _switch_to_tasks(self) -> None:
+        self._in_tasks   = True
+        self._active_tab = -1
+        self._content_stack.setCurrentIndex(5)
+        self._refresh_tasks()
+        self._update_tab_buttons(-1)
+
     def _update_tab_buttons(self, active: int) -> None:
         for i, btn in enumerate(self._tab_buttons):
-            # _tab_buttons[0..3] → reminder tabs, [4] → All Notes,
-            # [5+] → per-folder buttons (appended in _add_folder_tab)
             btn.setProperty("active", "true" if i == active else "false")
             btn.style().unpolish(btn)
             btn.style().polish(btn)
+        if self._task_btn is not None:
+            self._task_btn.setProperty("active", "true" if self._in_tasks else "false")
+            self._task_btn.style().unpolish(self._task_btn)
+            self._task_btn.style().polish(self._task_btn)
 
     # ── Data refresh ─────────────────────────────────────────────────────────
 
@@ -871,8 +992,10 @@ class MainWindow(QMainWindow):
     # ── CRUD actions ─────────────────────────────────────────────────────────
 
     def _on_fab_clicked(self) -> None:
-        """FAB opens NoteDialog on notes tabs, ReminderDialog otherwise."""
-        if self._active_tab >= 4:
+        """FAB opens TaskDialog in tasks mode, NoteDialog on notes tabs, ReminderDialog otherwise."""
+        if self._in_tasks:
+            self._on_task_add()
+        elif self._active_tab >= 4:
             folder_id = self._folder_tab_ids_reverse.get(self._active_tab)
             dlg = NoteDialog(self._user, self._note_service, folder_id=folder_id, parent=self)
             dlg.note_saved.connect(self._refresh_notes_preserve_selection)
