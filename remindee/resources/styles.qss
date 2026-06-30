@@ -540,3 +540,205 @@ QToolTip {
     padding: 4px 8px;
     font-size: 12px;
 }
+
+/* ── Tasks ─────────────────────────────────────────────────────── */
+
+QLabel#SectionLabel {
+    color: rgba(255, 255, 255, 0.42);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    padding: 6px 14px 2px;
+}
+
+QFrame#TaskRow {
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 10px;
+}
+
+QFrame#TaskRow:hover {
+    background: rgba(255, 255, 255, 0.085);
+    border-color: rgba(255, 255, 255, 0.18);
+}
+
+QPushButton#TaskToggleBtn {
+    background: transparent;
+    border: none;
+    border-radius: 5px;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+QPushButton#TaskToggleBtn:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+QLabel#TaskTitle {
+    color: @text;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+QProgressBar#TaskProgress {
+    background: rgba(255, 255, 255, 0.12);
+    border: none;
+    border-radius: 2px;
+}
+
+QProgressBar#TaskProgress::chunk {
+    background: @accent;
+    border-radius: 2px;
+}
+
+QLabel#TaskProgressLabel {
+    color: rgba(255, 255, 255, 0.50);
+    font-size: 11px;
+}
+
+QLabel#TaskDueLabel {
+    font-size: 11px;
+}
+
+QPushButton#TaskMoreBtn {
+    background: transparent;
+    border: none;
+    border-radius: 5px;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 16px;
+    font-weight: 700;
+}
+
+QPushButton#TaskMoreBtn:hover {
+    background: rgba(255, 255, 255, 0.14);
+    color: rgba(255, 255, 255, 0.85);
+}
+
+/* Quick-add bar */
+QLineEdit#TaskQuickAdd {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1.5px solid rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    color: @text;
+    font-size: 14px;
+    padding: 8px 14px;
+}
+
+QLineEdit#TaskQuickAdd:focus {
+    border-color: @accent;
+    background: rgba(255, 255, 255, 0.10);
+}
+
+QPushButton#TaskQuickAddBtn {
+    background: @accent;
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    font-size: 20px;
+    font-weight: 700;
+}
+
+QPushButton#TaskQuickAddBtn:hover {
+    background: @accent_hover;
+}
+
+/* Task dialog fields */
+QLineEdit#TaskTitleInput {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1.5px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px;
+    color: @text;
+    font-size: 18px;
+    font-weight: 600;
+    padding: 10px 14px;
+}
+
+QLineEdit#TaskTitleInput:focus {
+    border-color: @accent;
+}
+
+QTextEdit#TaskDescEdit {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    color: @text;
+    font-size: 13px;
+    padding: 6px 10px;
+}
+
+QLabel#DialogFieldLabel {
+    color: rgba(255, 255, 255, 0.60);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QLabel#DialogSectionLabel {
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+}
+
+QPushButton#TaskDueToggle {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.65);
+    font-size: 12px;
+    padding: 5px 12px;
+}
+
+QPushButton#TaskDueToggle:checked {
+    border-color: @accent;
+    color: @accent;
+}
+
+QDateEdit#TaskDueEdit {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    color: @text;
+    font-size: 13px;
+    padding: 5px 10px;
+}
+
+QComboBox#TaskStatusCombo {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    color: @text;
+    font-size: 13px;
+    padding: 5px 10px;
+    min-width: 120px;
+}
+
+QLabel#SubtaskRowTitle {
+    color: @text;
+    font-size: 13px;
+}
+
+QPushButton#SubtaskDeleteBtn {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 12px;
+    border-radius: 4px;
+}
+
+QPushButton#SubtaskDeleteBtn:hover {
+    background: rgba(255, 70, 70, 0.22);
+    color: #FF6B6B;
+}
+
+QLineEdit#SubtaskInput {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 7px;
+    color: @text;
+    font-size: 13px;
+    padding: 5px 10px;
+}
+
+QLineEdit#SubtaskInput:focus {
+    border-color: @accent;
+}

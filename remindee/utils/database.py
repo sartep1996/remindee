@@ -5,6 +5,7 @@ from .config import DATABASE_URL
 from remindee.models.base import Base
 import remindee.models.user  # noqa: F401 — registers User with Base.metadata
 import remindee.models.reminder  # noqa: F401 — registers Reminder with Base.metadata
+import remindee.models.task  # noqa: F401 — registers Task with Base.metadata
 
 engine = create_engine(
     DATABASE_URL,

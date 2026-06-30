@@ -6,6 +6,7 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .reminder import Reminder
+    from .task import Task
 
 
 class User(Base):
@@ -27,6 +28,9 @@ class User(Base):
 
     reminders: Mapped[List["Reminder"]] = relationship(
         "Reminder", back_populates="user", cascade="all, delete-orphan"
+    )
+    tasks: Mapped[List["Task"]] = relationship(
+        "Task", back_populates="user", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
