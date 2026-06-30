@@ -18,6 +18,7 @@ class Task(Base):
     id         : Mapped[int]            = mapped_column(primary_key=True, autoincrement=True)
     user_id    : Mapped[int]            = mapped_column(ForeignKey("users.id"), index=True)
     title      : Mapped[str]            = mapped_column(String(512), nullable=False)
+    status     : Mapped[str]            = mapped_column(String(32), nullable=False, default="pending")
     due_date   : Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     # JSON list: [{"title": str, "done": bool}, ...]
     subtasks   : Mapped[Optional[str]]  = mapped_column(Text, nullable=True)
