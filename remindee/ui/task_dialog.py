@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import random
 from datetime import datetime
 from typing import Optional
@@ -318,7 +319,6 @@ class TaskDialog(QDialog):
             for chk, edit in self._sub_rows
             if edit.text().strip()
         ]
-        import json
         subs_json = json.dumps(subtasks) if subtasks else None
 
         if self._task is None:

@@ -3,11 +3,16 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from .config import DATABASE_URL
 from remindee.models.base import Base
-import remindee.models.user  # noqa: F401 — registers User with Base.metadata
-import remindee.models.reminder  # noqa: F401 — registers Reminder with Base.metadata
-import remindee.models.note_folder  # noqa: F401 — registers NoteFolder with Base.metadata
-import remindee.models.note  # noqa: F401 — registers Note with Base.metadata
-import remindee.models.task  # noqa: F401 — registers Task with Base.metadata
+# Side-effect imports — register all ORM models with Base.metadata before
+# create_all() is called. Import as symbols to satisfy pyflakes.
+from remindee.models.user import User as _User
+from remindee.models.reminder import Reminder as _Reminder
+from remindee.models.note_folder import NoteFolder as _NoteFolder
+from remindee.models.note import Note as _Note
+from remindee.models.task import Task as _Task
+
+__all__ = ["init_db", "get_session", "SessionLocal", "engine",
+           "_User", "_Reminder", "_NoteFolder", "_Note", "_Task"]
 
 engine = create_engine(
     DATABASE_URL,
