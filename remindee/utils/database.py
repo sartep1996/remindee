@@ -34,6 +34,9 @@ def init_db() -> None:
             "ALTER TABLE reminders ADD COLUMN font_family VARCHAR(128) NOT NULL DEFAULT 'Marker Felt'",
             "ALTER TABLE users ADD COLUMN app_font VARCHAR(128) NOT NULL DEFAULT 'Marker Felt'",
             "ALTER TABLE notes ADD COLUMN attachments TEXT",
+            "ALTER TABLE tasks ADD COLUMN due_date DATETIME",
+            "ALTER TABLE tasks ADD COLUMN subtasks TEXT",
+            "ALTER TABLE tasks ADD COLUMN updated_at DATETIME",
         ]:
             try:
                 conn.execute(text(stmt))
