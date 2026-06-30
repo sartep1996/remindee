@@ -5,11 +5,12 @@ import random
 from datetime import datetime
 from typing import Optional
 
-from PySide6.QtCore import Qt, QDate, QDateTime, QRectF, QTime, Signal
+from PySide6.QtCore import Qt, QDate, QRectF, Signal
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
-    QCheckBox, QDateTimeEdit, QDialog, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QCalendarWidget, QCheckBox, QDialog, QDialogButtonBox,
+    QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea,
+    QSpinBox, QVBoxLayout, QWidget,
 )
 
 from remindee.models.task import Task
@@ -18,6 +19,64 @@ from remindee.services.task_service import TaskService
 from remindee.ui.reminder_card import (
     _DARK_BASES, _SCHEMES, _STYLES, _draw_base,
 )
+
+
+class _DatePickerDialog(QDialog):
+    """Standalone calendar + time picker — avoids QDateTimeEdit popup issues on macOS."""
+
+    def __init__(self, initial: Optional[datetime] = None, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Pick a date & time")
+        self.setModal(True)
+        self.setMinimumWidth(300)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 12)
+        layout.setSpacing(10)
+
+        self._cal = QCalendarWidget()
+        self._cal.setGridVisible(True)
+        self._cal.setVerticalHeaderFormat(
+            QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader
+        )
+        if initial:
+            self._cal.setSelectedDate(QDate(initial.year, initial.month, initial.day))
+        layout.addWidget(self._cal)
+
+        # Time row
+        time_row = QHBoxLayout()
+        time_row.setSpacing(6)
+        time_row.addWidget(QLabel("Time:"))
+
+        self._hour = QSpinBox()
+        self._hour.setRange(0, 23)
+        self._hour.setValue(initial.hour if initial else 9)
+        self._hour.setFixedWidth(52)
+        time_row.addWidget(self._hour)
+
+        time_row.addWidget(QLabel(":"))
+
+        self._minute = QSpinBox()
+        self._minute.setRange(0, 59)
+        self._minute.setValue(initial.minute if initial else 0)
+        self._minute.setSingleStep(5)
+        self._minute.setFixedWidth(52)
+        time_row.addWidget(self._minute)
+
+        time_row.addStretch()
+        layout.addLayout(time_row)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        layout.addWidget(btns)
+
+    def selected_datetime(self) -> datetime:
+        qd = self._cal.selectedDate()
+        return datetime(qd.year(), qd.month(), qd.day(),
+                        self._hour.value(), self._minute.value(), 0)
 
 
 class TaskDialog(QDialog):
@@ -59,19 +118,18 @@ class TaskDialog(QDialog):
             TaskService.parse_subtasks(task) if task else []
         )
         self._sub_rows: list[tuple[QCheckBox, QLineEdit]] = []
+        self._due_datetime: Optional[datetime] = None
 
         self._build()
 
         if task:
             self._title_edit.setText(task.title or "")
             if task.due_date:
-                self._due_check.setChecked(True)
                 dt = task.due_date.replace(tzinfo=None) if task.due_date.tzinfo else task.due_date
-                self._due_edit.setDateTime(
-                    QDateTime(QDate(dt.year, dt.month, dt.day),
-                              QTime(dt.hour, dt.minute, dt.second))
-                )
-                self._due_edit.setEnabled(True)
+                self._due_datetime = dt
+                self._due_check.setChecked(True)
+                self._due_btn.setText(dt.strftime("%b %d %Y  %H:%M"))
+                self._due_btn.setEnabled(True)
             for sub in self._subtasks:
                 self._add_subtask_row(sub.get("title", ""), sub.get("done", False))
         self._title_edit.setFocus()
@@ -174,21 +232,17 @@ class TaskDialog(QDialog):
         )
         due_row.addWidget(self._due_check)
 
-        self._due_edit = QDateTimeEdit()
-        self._due_edit.setCalendarPopup(True)
-        now = datetime.now()
-        self._due_edit.setDateTime(
-            QDateTime(QDate(now.year, now.month, now.day),
-                      QTime(now.hour, now.minute, 0))
+        self._due_btn = QPushButton("📅  Pick date & time")
+        self._due_btn.setEnabled(False)
+        self._due_btn.setFixedHeight(38)
+        self._due_btn.setStyleSheet(
+            f"QPushButton {{ {self._input_ss()} text-align: left; }}"
+            f"QPushButton:disabled {{ opacity: 0.45; }}"
+            f"QPushButton:hover:enabled {{ border-color: {'rgba(255,255,255,0.40)' if self._art_dark else '#FF6B35'}; }}"
         )
-        self._due_edit.setEnabled(False)
-        self._due_edit.setDisplayFormat("MMM d yyyy  h:mm AP")
-        self._due_edit.setStyleSheet(
-            f"QDateTimeEdit {{ {self._input_ss()} }}"
-            f"QDateTimeEdit:disabled {{ opacity: 0.4; }}"
-        )
-        due_row.addWidget(self._due_edit, stretch=1)
-        self._due_check.toggled.connect(self._due_edit.setEnabled)
+        self._due_btn.clicked.connect(self._pick_due_date)
+        due_row.addWidget(self._due_btn, stretch=1)
+        self._due_check.toggled.connect(self._on_due_check_toggled)
         layout.addLayout(due_row)
 
         # Subtasks label + add button
@@ -307,6 +361,20 @@ class TaskDialog(QDialog):
             self._sub_rows.remove(pair)
         widget.deleteLater()
 
+    # ── Due date helpers ──────────────────────────────────────────────────────
+
+    def _on_due_check_toggled(self, checked: bool) -> None:
+        self._due_btn.setEnabled(checked)
+        if not checked:
+            self._due_datetime = None
+            self._due_btn.setText("📅  Pick date & time")
+
+    def _pick_due_date(self) -> None:
+        dlg = _DatePickerDialog(initial=self._due_datetime, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._due_datetime = dlg.selected_datetime()
+            self._due_btn.setText(self._due_datetime.strftime("%b %d %Y  %H:%M"))
+
     # ── Save ──────────────────────────────────────────────────────────────────
 
     def _save(self) -> None:
@@ -317,11 +385,7 @@ class TaskDialog(QDialog):
 
         due_date: Optional[datetime] = None
         if self._due_check.isChecked():
-            qdt = self._due_edit.dateTime()
-            due_date = datetime(
-                qdt.date().year(), qdt.date().month(), qdt.date().day(),
-                qdt.time().hour(), qdt.time().minute(), qdt.time().second(),
-            )
+            due_date = self._due_datetime
 
         subtasks = [
             {"title": edit.text().strip(), "done": chk.isChecked()}
