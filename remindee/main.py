@@ -5,11 +5,25 @@ import sys
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
-from remindee.utils.database import init_db
+from remindee.models.user import User
+from remindee.utils.database import init_db, get_session
 from remindee.services.scheduler_service import SchedulerService
-from remindee.ui.login_dialog import LoginDialog
 from remindee.ui.main_window import MainWindow
 from remindee.ui.styles import apply_theme
+
+_GUEST_EMAIL = "local@remindee.app"
+
+
+def _get_or_create_guest() -> User:
+    """Return (or create) the single local guest account, no login needed."""
+    with get_session() as session:
+        user = session.query(User).filter_by(email=_GUEST_EMAIL).first()
+        if user is None:
+            user = User(email=_GUEST_EMAIL, display_name="Local User", theme="light")
+            session.add(user)
+            session.flush()
+        session.expunge(user)
+        return user
 
 
 def main() -> None:
@@ -33,15 +47,7 @@ def main() -> None:
     # Connect quit signal to clean up scheduler
     app.aboutToQuit.connect(scheduler.stop)
 
-    login = LoginDialog()
-    result = login.exec()
-
-    if result != LoginDialog.DialogCode.Accepted or login.current_user is None:
-        sys.exit(0)
-
-    user = login.current_user
-
-    # Apply user's saved theme preference
+    user = _get_or_create_guest()
     apply_theme(app, user.theme)
 
     window = MainWindow(user, scheduler)
