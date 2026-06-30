@@ -5,7 +5,7 @@ import random
 from datetime import datetime
 from typing import Optional
 
-from PySide6.QtCore import Qt, QDateTime, QRectF, Signal
+from PySide6.QtCore import Qt, QDate, QDateTime, QRectF, QTime, Signal
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
     QCheckBox, QDateTimeEdit, QDialog, QHBoxLayout,
@@ -68,7 +68,8 @@ class TaskDialog(QDialog):
                 self._due_check.setChecked(True)
                 dt = task.due_date.replace(tzinfo=None) if task.due_date.tzinfo else task.due_date
                 self._due_edit.setDateTime(
-                    QDateTime(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second)
+                    QDateTime(QDate(dt.year, dt.month, dt.day),
+                              QTime(dt.hour, dt.minute, dt.second))
                 )
                 self._due_edit.setEnabled(True)
             for sub in self._subtasks:
@@ -177,7 +178,8 @@ class TaskDialog(QDialog):
         self._due_edit.setCalendarPopup(True)
         now = datetime.now()
         self._due_edit.setDateTime(
-            QDateTime(now.year, now.month, now.day, now.hour, now.minute, 0)
+            QDateTime(QDate(now.year, now.month, now.day),
+                      QTime(now.hour, now.minute, 0))
         )
         self._due_edit.setEnabled(False)
         self._due_edit.setDisplayFormat("MMM d yyyy  h:mm AP")

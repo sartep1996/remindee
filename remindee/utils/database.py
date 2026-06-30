@@ -37,6 +37,9 @@ def init_db() -> None:
             "ALTER TABLE tasks ADD COLUMN due_date DATETIME",
             "ALTER TABLE tasks ADD COLUMN subtasks TEXT",
             "ALTER TABLE tasks ADD COLUMN updated_at DATETIME",
+            "ALTER TABLE tasks ADD COLUMN is_done INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE tasks ADD COLUMN description TEXT",
+            "ALTER TABLE tasks ADD COLUMN completion_date DATETIME",
         ]:
             try:
                 conn.execute(text(stmt))

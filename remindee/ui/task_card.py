@@ -18,8 +18,9 @@ from remindee.ui.reminder_card import (
 
 
 class TaskCard(QFrame):
-    edit_requested    = Signal(object)      # Task
-    delete_requested  = Signal(object)      # Task
+    edit_requested    = Signal(object)          # Task
+    delete_requested  = Signal(object)          # Task
+    done_toggled      = Signal(int, bool)       # task_id, is_done
     subtask_toggled   = Signal(int, int, bool)  # task_id, subtask_idx, done
 
     def __init__(self, task: Task, parent=None) -> None:
@@ -45,13 +46,31 @@ class TaskCard(QFrame):
         outer.setContentsMargins(16, 12, 16, 10)
         outer.setSpacing(6)
 
-        # ── Top row: title + buttons ──────────────────────────────────────────
+        # ── Top row: done check + title + buttons ────────────────────────────
         top = QHBoxLayout()
         top.setSpacing(8)
 
-        title = _OutlinedLabel(self._task.title)
+        done_btn = QPushButton("☑" if self._task.is_done else "☐")
+        done_btn.setObjectName("TaskCheckBtn")
+        done_btn.setFixedSize(30, 30)
+        done_btn.setToolTip("Mark complete" if not self._task.is_done else "Mark incomplete")
+        if self._is_dark:
+            done_btn.setStyleSheet(_DARK_BTN)
+        done_btn.clicked.connect(
+            lambda: self.done_toggled.emit(self._task.id, not self._task.is_done)
+        )
+        top.addWidget(done_btn)
+
+        title_text = self._task.title
+        title = _OutlinedLabel(title_text)
         title.setObjectName("CardTitle")
         title.setFont(QFont("Marker Felt", 14))
+        if self._task.is_done:
+            title.setStyleSheet(
+                "color: rgba(80,80,80,0.50); text-decoration: line-through;"
+                if not self._is_dark else
+                "color: rgba(200,200,200,0.35); text-decoration: line-through;"
+            )
         top.addWidget(title, stretch=1)
 
         edit_btn = QPushButton("✏")

@@ -597,6 +597,7 @@ class MainWindow(QMainWindow):
             card = TaskCard(task)
             card.edit_requested.connect(self._on_task_edit)
             card.delete_requested.connect(self._on_task_delete)
+            card.done_toggled.connect(self._on_task_done_toggled)
             card.subtask_toggled.connect(self._on_subtask_toggled)
             layout.insertWidget(i, card)
 
@@ -616,6 +617,10 @@ class MainWindow(QMainWindow):
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         self._task_service.delete_task(task.id)
+        self._refresh_tasks()
+
+    def _on_task_done_toggled(self, task_id: int, done: bool) -> None:
+        self._task_service.toggle_done(task_id, done)
         self._refresh_tasks()
 
     def _on_subtask_toggled(self, task_id: int, idx: int, done: bool) -> None:

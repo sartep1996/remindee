@@ -57,6 +57,11 @@ class TaskService:
             session.expunge(task)
             return task
 
+    def toggle_done(self, task_id: int, done: bool) -> Task:
+        completion = datetime.utcnow() if done else None
+        return self.update_task(task_id, is_done=done, completion_date=completion,
+                                status="done" if done else "pending")
+
     def toggle_subtask(self, task_id: int, idx: int, done: bool) -> Task:
         task = self.get_task(task_id)
         if task is None:
