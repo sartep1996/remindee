@@ -71,10 +71,20 @@ class _GlassPanel(QWidget):
         p.end()
 
 class _ConfirmDialog(QDialog):
-    """Styled Yes/No dialog that respects the app's light and dark themes."""
+    """Styled Yes/No dialog that respects the app's light and dark themes.
 
-    def __init__(self, message: str, confirm_label: str = "Delete",
-                 parent=None) -> None:
+    When ``safe_default=True`` the safe/cancel button is the default so that
+    pressing Enter keeps the item rather than deleting it.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        confirm_label: str = "Delete",
+        cancel_label: str = "Cancel",
+        safe_default: bool = False,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self.setModal(True)
         self.setMinimumWidth(300)
@@ -93,10 +103,11 @@ class _ConfirmDialog(QDialog):
         row.setSpacing(10)
         row.addStretch()
 
-        cancel_btn = QPushButton("Cancel")
+        cancel_btn = QPushButton(cancel_label)
         cancel_btn.setObjectName("SecondaryBtn")
         cancel_btn.setMinimumHeight(38)
         cancel_btn.setMinimumWidth(90)
+        cancel_btn.setDefault(safe_default)
         cancel_btn.clicked.connect(self.reject)
         row.addWidget(cancel_btn)
 
@@ -104,7 +115,7 @@ class _ConfirmDialog(QDialog):
         confirm_btn.setObjectName("DangerBtn")
         confirm_btn.setMinimumHeight(38)
         confirm_btn.setMinimumWidth(90)
-        confirm_btn.setDefault(True)
+        confirm_btn.setDefault(not safe_default)
         confirm_btn.clicked.connect(self.accept)
         row.addWidget(confirm_btn)
 
@@ -118,7 +129,8 @@ _SIDEBAR_TABS = [
     ("🗓", "Calendar"),
 ]
 
-_NOTE_MIME = "application/x-remindee-note-id"
+_NOTE_MIME     = "application/x-remindee-note-id"
+_REMINDER_MIME = "application/x-remindee-reminder-id"
 
 
 class _FolderDropBtn(QPushButton):
@@ -199,6 +211,50 @@ class _ReminderDropBtn(QPushButton):
             event.acceptProposedAction()
             self._set_dragover(False)
             self.note_dropped.emit(note_id)
+        else:
+            super().dropEvent(event)
+
+    def _set_dragover(self, on: bool) -> None:
+        self.setProperty("dragover", "true" if on else "false")
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+
+class _NoteDropBtn(QPushButton):
+    """Sidebar notes button that accepts dragged ReminderCards for conversion."""
+
+    reminder_dropped = Signal(int)  # emits reminder_id
+
+    def __init__(self, text: str, tab_index: int, parent=None) -> None:
+        super().__init__(text, parent)
+        self.setObjectName("SidebarBtn")
+        self._tab_index = tab_index
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasFormat(_REMINDER_MIME):
+            event.acceptProposedAction()
+            self._set_dragover(True)
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event) -> None:
+        if event.mimeData().hasFormat(_REMINDER_MIME):
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dragLeaveEvent(self, event) -> None:
+        self._set_dragover(False)
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event) -> None:
+        if event.mimeData().hasFormat(_REMINDER_MIME):
+            raw = event.mimeData().data(_REMINDER_MIME)
+            reminder_id = int(bytes(raw).decode())
+            event.acceptProposedAction()
+            self._set_dragover(False)
+            self.reminder_dropped.emit(reminder_id)
         else:
             super().dropEvent(event)
 
@@ -360,8 +416,10 @@ class MainWindow(QMainWindow):
         notes_label.setObjectName("SectionLabel")
         layout.addWidget(notes_label)
 
-        # "All Notes" tab button (index 4)
-        all_notes_btn = self._make_sidebar_btn("  📝  All Notes", 4)
+        # "All Notes" tab button (index 4) — also accepts dragged reminders
+        all_notes_btn = _NoteDropBtn("  📝  All Notes", 4)
+        all_notes_btn.clicked.connect(lambda checked: self._switch_tab(4))
+        all_notes_btn.reminder_dropped.connect(self._on_reminder_dropped_on_notes)
         layout.addWidget(all_notes_btn)
         self._tab_buttons.append(all_notes_btn)
 
@@ -771,11 +829,44 @@ class MainWindow(QMainWindow):
             confirm = _ConfirmDialog(
                 f'Delete the original note "{note.title or "Untitled"}"?',
                 confirm_label="Delete Note",
+                cancel_label="Keep Note",
+                safe_default=True,
                 parent=self,
             )
             if confirm.exec() == QDialog.DialogCode.Accepted:
                 self._note_service.delete_note(note_id)
                 self._refresh_notes_preserve_selection()
+
+    def _on_reminder_dropped_on_notes(self, reminder_id: int) -> None:
+        with get_session() as session:
+            reminder = session.get(Reminder, reminder_id)
+            if reminder is None:
+                return
+            r_name    = reminder.name
+            r_details = reminder.details or ""
+        dlg = NoteDialog(
+            self._user,
+            self._note_service,
+            prefill_text=r_name,
+            prefill_body=r_details,
+            parent=self,
+        )
+        dlg.note_saved.connect(self._refresh_notes_preserve_selection)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            confirm = _ConfirmDialog(
+                f'Delete the original reminder "{r_name}"?',
+                confirm_label="Delete Reminder",
+                cancel_label="Keep Reminder",
+                safe_default=True,
+                parent=self,
+            )
+            if confirm.exec() == QDialog.DialogCode.Accepted:
+                self._scheduler.remove_reminder(reminder_id)
+                with get_session() as session:
+                    r = session.get(Reminder, reminder_id)
+                    if r:
+                        session.delete(r)
+                self._refresh_current_view()
 
     # ── CRUD actions ─────────────────────────────────────────────────────────
 

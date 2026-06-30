@@ -236,6 +236,7 @@ class NoteDialog(QDialog):
         note: Note | None = None,
         folder_id: int | None = None,
         prefill_text: str = "",
+        prefill_body: str = "",
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -278,8 +279,11 @@ class NoteDialog(QDialog):
                 self._editor.setHtml(content)
             else:
                 self._editor.setPlainText(content)
-        elif prefill_text:
-            self._title_edit.setText(prefill_text)
+        elif prefill_text or prefill_body:
+            if prefill_text:
+                self._title_edit.setText(prefill_text)
+            if prefill_body:
+                self._editor.setPlainText(prefill_body)
 
         self._title_edit.setFocus()
 

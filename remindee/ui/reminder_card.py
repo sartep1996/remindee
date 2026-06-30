@@ -3,13 +3,13 @@ from __future__ import annotations
 import random
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QPointF, QRectF, Signal
+from PySide6.QtCore import Qt, QMimeData, QPoint, QPointF, QRectF, Signal
 from PySide6.QtGui import (
-    QBrush, QColor, QFont, QLinearGradient, QPainter, QPainterPath,
+    QBrush, QColor, QDrag, QFont, QLinearGradient, QPainter, QPainterPath,
     QPen, QPolygonF, QRadialGradient,
 )
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout,
+    QApplication, QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout,
 )
 
 from remindee.models.reminder import Reminder, FrequencyType
@@ -656,6 +656,43 @@ class ReminderCard(QFrame):
             if secs < 86400: return f"Next: {secs // 3600}h"
             return f"Next: {dt.strftime('%b %d')}"
         return ""
+
+    # ── Drag ─────────────────────────────────────────────────────────────────
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start: QPoint = event.position().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if (
+            event.buttons() & Qt.MouseButton.LeftButton
+            and hasattr(self, "_drag_start")
+            and (event.position().toPoint() - self._drag_start).manhattanLength()
+            >= QApplication.startDragDistance()
+        ):
+            self._start_reminder_drag()
+        super().mouseMoveEvent(event)
+
+    def _start_reminder_drag(self) -> None:
+        if not self._reminder.id:
+            return
+        mime = QMimeData()
+        mime.setData(
+            "application/x-remindee-reminder-id",
+            str(self._reminder.id).encode(),
+        )
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        pix = self.grab().scaled(
+            self.width() // 2,
+            self.height() // 2,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        drag.setPixmap(pix)
+        drag.setHotSpot(pix.rect().center())
+        drag.exec(Qt.DropAction.MoveAction)
 
     # ── Hover ────────────────────────────────────────────────────────────────
 
