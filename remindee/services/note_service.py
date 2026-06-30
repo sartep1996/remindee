@@ -111,6 +111,13 @@ class NoteService:
             session.expunge(note)
             return note
 
+    def get_note(self, note_id: int) -> Note | None:
+        with get_session() as session:
+            note = session.get(Note, note_id)
+            if note:
+                session.expunge(note)
+            return note
+
     def delete_note(self, note_id: int) -> None:
         with get_session() as session:
             note = session.query(Note).filter(Note.id == note_id).one()

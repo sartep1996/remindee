@@ -165,6 +165,49 @@ class _FolderDropBtn(QPushButton):
         self.style().polish(self)
 
 
+class _ReminderDropBtn(QPushButton):
+    """Sidebar reminder-view button that accepts dragged NoteCards for conversion."""
+
+    note_dropped = Signal(int)  # emits note_id
+
+    def __init__(self, text: str, parent=None) -> None:
+        super().__init__(text, parent)
+        self.setObjectName("SidebarBtn")
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasFormat(_NOTE_MIME):
+            event.acceptProposedAction()
+            self._set_dragover(True)
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event) -> None:
+        if event.mimeData().hasFormat(_NOTE_MIME):
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dragLeaveEvent(self, event) -> None:
+        self._set_dragover(False)
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event) -> None:
+        if event.mimeData().hasFormat(_NOTE_MIME):
+            raw = event.mimeData().data(_NOTE_MIME)
+            note_id = int(bytes(raw).decode())
+            event.acceptProposedAction()
+            self._set_dragover(False)
+            self.note_dropped.emit(note_id)
+        else:
+            super().dropEvent(event)
+
+    def _set_dragover(self, on: bool) -> None:
+        self.setProperty("dragover", "true" if on else "false")
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, user: User, scheduler: SchedulerService) -> None:
         super().__init__()
@@ -300,10 +343,10 @@ class MainWindow(QMainWindow):
 
         self._tab_buttons: list[QPushButton] = []
         for i, (icon_char, label) in enumerate(_SIDEBAR_TABS):
-            btn = QPushButton(f"  {icon_char}  {label}")
-            btn.setObjectName("SidebarBtn")
+            btn = _ReminderDropBtn(f"  {icon_char}  {label}")
             btn.setCheckable(False)
             btn.clicked.connect(lambda checked, idx=i: self._switch_tab(idx))
+            btn.note_dropped.connect(self._on_note_dropped_on_reminder)
             layout.addWidget(btn)
             self._tab_buttons.append(btn)
 
@@ -711,6 +754,28 @@ class MainWindow(QMainWindow):
     def _on_note_moved_to_folder(self, note_id: int, folder_id: int) -> None:
         self._note_service.update_note(note_id, folder_id=folder_id)
         self._refresh_notes_preserve_selection()
+
+    def _on_note_dropped_on_reminder(self, note_id: int) -> None:
+        note = self._note_service.get_note(note_id)
+        if note is None:
+            return
+        kwargs = self._note_service.note_to_reminder_kwargs(note)
+        dlg = ReminderDialog(
+            self._user,
+            self._scheduler,
+            prefill_name=kwargs.get("prefill_name", ""),
+            parent=self,
+        )
+        dlg.reminder_saved.connect(self._on_reminder_saved)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            confirm = _ConfirmDialog(
+                f'Delete the original note "{note.title or "Untitled"}"?',
+                confirm_label="Delete Note",
+                parent=self,
+            )
+            if confirm.exec() == QDialog.DialogCode.Accepted:
+                self._note_service.delete_note(note_id)
+                self._refresh_notes_preserve_selection()
 
     # ── CRUD actions ─────────────────────────────────────────────────────────
 
