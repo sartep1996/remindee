@@ -395,8 +395,11 @@ class ReminderDialog(QDialog):
         save_btn = QPushButton("Save Reminder")
         save_btn.setObjectName("PrimaryBtn")
         save_btn.setMinimumHeight(44)
-        save_btn.setDefault(True)          # Enter triggers this button
-        save_btn.setAutoDefault(True)
+        # In quick_mode the keyboard flow (Enter→details→Enter→save) owns Enter;
+        # disabling default/autoDefault stops Qt's dialog mechanism from also
+        # firing the button click when Enter is pressed in the name field.
+        save_btn.setDefault(not self._quick_mode)
+        save_btn.setAutoDefault(not self._quick_mode)
         save_btn.clicked.connect(self._save)
         btn_row.addWidget(save_btn)
 
@@ -422,10 +425,7 @@ class ReminderDialog(QDialog):
     def keyPressEvent(self, event) -> None:
         key = event.key()
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            if self._quick_mode and self._name_edit.hasFocus():
-                self._focus_details()
-                return
-            # Enter in QTextEdit should insert a newline, not save (unless quick mode handles it)
+            # Enter in QTextEdit should insert a newline, not save
             if not self._details_edit.hasFocus():
                 self._save()
                 return
