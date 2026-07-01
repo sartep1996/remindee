@@ -36,7 +36,7 @@ class _QuickTextEdit(QTextEdit):
 from remindee.models.reminder import Reminder, FrequencyType
 from remindee.utils.database import get_session
 from remindee.ui.styles import apply_calendar_palette
-from remindee.ui.reminder_card import _SCHEMES, _DARK_BASES, _STYLES, _draw_base
+from remindee.ui.reminder_card import _SCHEMES, _DARK_BASES, _STYLES, _draw_base, _split_task_link
 
 if TYPE_CHECKING:
     from remindee.services.scheduler_service import SchedulerService
@@ -83,7 +83,8 @@ _FONT_OPTIONS = [f for _, fonts in _FONT_GROUPS for f in fonts]
 
 
 class ReminderDialog(QDialog):
-    reminder_saved = Signal(object)  # Reminder
+    reminder_saved      = Signal(object)  # Reminder
+    open_task_requested = Signal(int)     # task_id
 
     def __init__(
         self,
@@ -103,6 +104,13 @@ class ReminderDialog(QDialog):
         self._prefill_name    = prefill_name
         self._prefill_details = prefill_details
         self._quick_mode      = quick_mode
+        self._linked_task_id: Optional[int] = None
+
+        # Strip task_id metadata from prefill so it never appears in the textarea
+        if self._prefill_details:
+            clean, tid = _split_task_link(self._prefill_details)
+            self._prefill_details = clean
+            self._linked_task_id  = tid
 
         # ── Art palette ───────────────────────────────────────────────────
         # In edit mode use the same seed as the card so the palette matches.
@@ -131,6 +139,8 @@ class ReminderDialog(QDialog):
                 self._name_edit.setText(self._prefill_name)
             if self._prefill_details:
                 self._details_edit.setPlainText(self._prefill_details)
+            if self._linked_task_id is not None:
+                self._task_link_row.setVisible(True)
 
     # ── Custom background ─────────────────────────────────────────────────────
 
@@ -304,6 +314,36 @@ class ReminderDialog(QDialog):
             )
         layout.addWidget(self._details_edit)
 
+        # Task link row — hidden unless this reminder was created from a subtask
+        self._task_link_row = QWidget()
+        self._task_link_row.setVisible(False)
+        tl_layout = QHBoxLayout(self._task_link_row)
+        tl_layout.setContentsMargins(0, 0, 0, 0)
+        tl_layout.setSpacing(0)
+        if self._art_dark:
+            open_task_ss = (
+                "QPushButton { background: rgba(255,107,53,0.18);"
+                " border: 1px solid rgba(255,107,53,0.45); border-radius: 10px;"
+                " font-size: 12px; font-weight: 600;"
+                " color: rgba(255,160,100,0.95); padding: 4px 14px; }"
+                "QPushButton:hover { background: rgba(255,107,53,0.32); }"
+            )
+        else:
+            open_task_ss = (
+                "QPushButton { background: rgba(255,107,53,0.10);"
+                " border: 1px solid rgba(255,107,53,0.32); border-radius: 10px;"
+                " font-size: 12px; font-weight: 600;"
+                " color: #E85A20; padding: 4px 14px; }"
+                "QPushButton:hover { background: rgba(255,107,53,0.22); }"
+            )
+        open_task_btn = QPushButton("↗  Open task")
+        open_task_btn.setStyleSheet(open_task_ss)
+        open_task_btn.setToolTip("Switch to the task this reminder belongs to")
+        open_task_btn.clicked.connect(self._emit_open_task)
+        tl_layout.addWidget(open_task_btn)
+        tl_layout.addStretch()
+        layout.addWidget(self._task_link_row)
+
         # Frequency
         layout.addWidget(self._lbl("Frequency *"))
         self._freq_combo = QComboBox()
@@ -469,7 +509,11 @@ class ReminderDialog(QDialog):
         r = self._reminder
         self._name_edit.setText(r.name)
         if r.details:
-            self._details_edit.setPlainText(r.details)
+            visible, task_id = _split_task_link(r.details)
+            self._details_edit.setPlainText(visible)
+            if task_id is not None:
+                self._linked_task_id = task_id
+                self._task_link_row.setVisible(True)
 
         for i, (_, ft) in enumerate(_FREQ_OPTIONS):
             if ft == r.frequency:
@@ -517,7 +561,12 @@ class ReminderDialog(QDialog):
                 self._show_error("Date and time must be in the future.")
                 return
 
-        details = self._details_edit.toPlainText().strip() or None
+        details_text = self._details_edit.toPlainText().strip()
+        if self._linked_task_id is not None:
+            suffix = f"task_id:{self._linked_task_id}"
+            details = f"{details_text}\n{suffix}" if details_text else suffix
+        else:
+            details = details_text or None
 
         with get_session() as session:
             if self._edit_mode:
@@ -554,6 +603,11 @@ class ReminderDialog(QDialog):
         self._scheduler.schedule_reminder(reminder)
         self.reminder_saved.emit(reminder)
         self.accept()
+
+    def _emit_open_task(self) -> None:
+        if self._linked_task_id is not None:
+            self.accept()  # close dialog first so task dialog opens cleanly
+            self.open_task_requested.emit(self._linked_task_id)
 
     def _show_error(self, msg: str) -> None:
         self._error_lbl.setText(msg)

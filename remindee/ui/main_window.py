@@ -1158,6 +1158,7 @@ class MainWindow(QMainWindow):
                 session.expunge(r)
         dialog = ReminderDialog(self._user, self._scheduler, reminder=r, parent=self)
         dialog.reminder_saved.connect(self._on_reminder_saved)
+        dialog.open_task_requested.connect(self._on_open_task_from_reminder)
         dialog.exec()
 
     def _mark_done(self, reminder: Reminder) -> None:
