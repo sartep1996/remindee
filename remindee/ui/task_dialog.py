@@ -22,7 +22,13 @@ from remindee.ui.reminder_card import (
 
 
 class _BodyEdit(QTextEdit):
-    """QTextEdit where clicking on a [ ] / [x] line prefix toggles the checkbox."""
+    """QTextEdit where clicking on a [ ] / [x] line prefix toggles the checkbox.
+
+    Right-clicking a subtask line emits subtask_reminder_requested so the
+    parent dialog can open a date picker for that subtask.
+    """
+
+    subtask_reminder_requested = Signal(str)  # emits subtask title
 
     def mousePressEvent(self, event) -> None:
         super().mousePressEvent(event)
@@ -40,6 +46,21 @@ class _BodyEdit(QTextEdit):
         elif line.startswith('[x] '):
             cursor.insertText('[ ] ' + line[4:])
             self.setTextCursor(cursor)
+
+    def contextMenuEvent(self, event) -> None:
+        menu = self.createStandardContextMenu()
+        cursor = self.cursorForPosition(event.pos())
+        cursor.select(QTextCursor.SelectionType.LineUnderCursor)
+        line = cursor.selectedText()
+        if line.startswith('[ ] ') or line.startswith('[x] '):
+            sub_title = line[4:].strip()
+            if sub_title:
+                menu.addSeparator()
+                act = menu.addAction(f'🔔  Set reminder for "{sub_title}"')
+                act.triggered.connect(
+                    lambda: self.subtask_reminder_requested.emit(sub_title)
+                )
+        menu.exec(event.globalPos())
 
 
 class _DatePickerDialog(QDialog):
@@ -144,6 +165,7 @@ class TaskDialog(QDialog):
 
         self._due_datetime: Optional[datetime] = None
         self._reminder_datetime: Optional[datetime] = None
+        self._subtask_reminders: dict[str, datetime] = {}
 
         self._build()
 
@@ -322,6 +344,20 @@ class TaskDialog(QDialog):
             )
         layout.addWidget(self._body_edit, stretch=1)
 
+        # Subtask reminder status label + signal wiring (only with scheduler)
+        self._sub_rem_lbl = QLabel("")
+        self._sub_rem_lbl.setWordWrap(True)
+        self._sub_rem_lbl.setVisible(False)
+        self._sub_rem_lbl.setStyleSheet(
+            f"background: transparent; color: {'rgba(255,160,100,0.90)' if self._art_dark else '#C04A10'};"
+            " font-size: 11px;"
+        )
+        layout.addWidget(self._sub_rem_lbl)
+        if self._scheduler is not None:
+            self._body_edit.subtask_reminder_requested.connect(
+                self._on_subtask_reminder_requested
+            )
+
         # Due date row
         due_row = QHBoxLayout()
         due_row.setSpacing(10)
@@ -430,6 +466,26 @@ class TaskDialog(QDialog):
         cursor.insertText('\n'.join(new_lines))
         self._body_edit.setTextCursor(cursor)
 
+    # ── Subtask reminder helpers ──────────────────────────────────────────────
+
+    def _on_subtask_reminder_requested(self, sub_title: str) -> None:
+        existing = self._subtask_reminders.get(sub_title)
+        dlg = _DatePickerDialog(initial=existing, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._subtask_reminders[sub_title] = dlg.selected_datetime()
+            self._refresh_sub_rem_label()
+
+    def _refresh_sub_rem_label(self) -> None:
+        if not self._subtask_reminders:
+            self._sub_rem_lbl.setVisible(False)
+            return
+        parts = [
+            f"🔔 {title}  →  {dt.strftime('%b %d  %H:%M')}"
+            for title, dt in self._subtask_reminders.items()
+        ]
+        self._sub_rem_lbl.setText("    ".join(parts))
+        self._sub_rem_lbl.setVisible(True)
+
     # ── Due date helpers ──────────────────────────────────────────────────────
 
     def _on_due_check_toggled(self, checked: bool) -> None:
@@ -500,20 +556,28 @@ class TaskDialog(QDialog):
 
         self.task_saved.emit(task)
 
-        # Schedule task-level reminder
+        # Schedule reminders (task-level + per-subtask)
         if self._scheduler is not None:
             from remindee.models.reminder import Reminder, FrequencyType
             from remindee.utils.database import get_session
 
+            to_remind: list[tuple[str, datetime]] = []
+
             if (getattr(self, "_reminder_check", None) is not None
                     and self._reminder_check.isChecked()
                     and self._reminder_datetime is not None):
+                to_remind.append((title, self._reminder_datetime))
+
+            for sub_title, r_dt in self._subtask_reminders.items():
+                to_remind.append((sub_title, r_dt))
+
+            for r_name, r_dt in to_remind:
                 with get_session() as session:
                     r = Reminder(
                         user_id=self._user.id,
-                        name=title,
+                        name=r_name,
                         frequency=FrequencyType.SPECIFIC,
-                        specific_datetime=self._reminder_datetime,
+                        specific_datetime=r_dt,
                         is_active=True,
                         is_done=False,
                     )
