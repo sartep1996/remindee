@@ -113,7 +113,8 @@ class _AnimCheck(QPushButton):
 # ── Subtask row ───────────────────────────────────────────────────────────────
 
 class _SubtaskRow(QWidget):
-    toggled = Signal(int, bool)  # (idx, new_done)
+    toggled           = Signal(int, bool)       # (idx, new_done)
+    reminder_clicked  = Signal(int, str, str)   # (task_id, task_title, sub_title)
 
     def __init__(
         self,
@@ -136,7 +137,7 @@ class _SubtaskRow(QWidget):
         self._drag_start = None
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(26, 1, 0, 1)
+        layout.setContentsMargins(26, 1, 6, 1)
         layout.setSpacing(6)
 
         self._chk = _AnimCheck(size=20)
@@ -148,6 +149,26 @@ class _SubtaskRow(QWidget):
         self._lbl.setObjectName("SubtaskLabel")
         self._apply_label_style(done)
         layout.addWidget(self._lbl, stretch=1)
+
+        bell_btn = QPushButton("🔔")
+        bell_btn.setFixedSize(22, 22)
+        bell_btn.setToolTip("Set reminder for this subtask")
+        if is_dark:
+            bell_btn.setStyleSheet(
+                "QPushButton { background: transparent; border: none;"
+                " color: rgba(200,180,160,0.30); font-size: 11px; }"
+                "QPushButton:hover { color: rgba(255,160,100,0.95); }"
+            )
+        else:
+            bell_btn.setStyleSheet(
+                "QPushButton { background: transparent; border: none;"
+                " color: rgba(100,60,30,0.28); font-size: 11px; }"
+                "QPushButton:hover { color: #FF6B35; }"
+            )
+        bell_btn.clicked.connect(
+            lambda: self.reminder_clicked.emit(self._task_id, self._task_title, self._sub_title)
+        )
+        layout.addWidget(bell_btn)
 
     def _apply_label_style(self, done: bool) -> None:
         if done:
@@ -329,11 +350,12 @@ class _MiniProgress(QFrame):
 # ── Main card ─────────────────────────────────────────────────────────────────
 
 class TaskCard(QFrame):
-    edit_requested   = Signal(object)          # Task
-    delete_requested = Signal(object)          # Task
-    done_toggled     = Signal(int, bool)       # task_id, is_done
-    subtask_toggled  = Signal(int, int, bool)  # task_id, subtask_idx, done
-    subtask_added    = Signal(int, str)        # task_id, title
+    edit_requested              = Signal(object)          # Task
+    delete_requested            = Signal(object)          # Task
+    done_toggled                = Signal(int, bool)       # task_id, is_done
+    subtask_toggled             = Signal(int, int, bool)  # task_id, subtask_idx, done
+    subtask_added               = Signal(int, str)        # task_id, title
+    subtask_reminder_requested  = Signal(int, str, str)   # task_id, task_title, sub_title
 
     # Class-level set to persist collapse state across refreshes
     _collapsed_ids: set = set()
@@ -494,6 +516,7 @@ class TaskCard(QFrame):
                 row.toggled.connect(
                     lambda i, d, tid=self._task.id: self.subtask_toggled.emit(tid, i, d)
                 )
+                row.reminder_clicked.connect(self.subtask_reminder_requested)
                 subs_layout.addWidget(row)
 
             # QuickAdd inside subs_widget

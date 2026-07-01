@@ -636,6 +636,7 @@ class MainWindow(QMainWindow):
             card.done_toggled.connect(self._on_task_done_toggled)
             card.subtask_toggled.connect(self._on_subtask_toggled)
             card.subtask_added.connect(self._on_subtask_added)
+            card.subtask_reminder_requested.connect(self._on_subtask_dropped_on_reminder)
             layout.insertWidget(i, card)
 
     def _on_task_add(self) -> None:
