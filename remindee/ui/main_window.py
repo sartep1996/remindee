@@ -138,9 +138,10 @@ _TASK_MIME     = "application/x-remindee-task-id"
 
 
 class _FolderDropBtn(QPushButton):
-    """Sidebar folder button that highlights when a NoteCard is dragged over it."""
+    """Sidebar folder button that highlights when a NoteCard or TaskCard is dragged over it."""
 
     note_dropped = Signal(int, int)  # (note_id, folder_id)
+    task_dropped = Signal(int, int)  # (task_id, folder_id)
 
     def __init__(self, text: str, folder_id: int, parent=None) -> None:
         super().__init__(text, parent)
@@ -149,14 +150,14 @@ class _FolderDropBtn(QPushButton):
         self.setAcceptDrops(True)
 
     def dragEnterEvent(self, event) -> None:
-        if event.mimeData().hasFormat(_NOTE_MIME):
+        if event.mimeData().hasFormat(_NOTE_MIME) or event.mimeData().hasFormat(_TASK_MIME):
             event.acceptProposedAction()
             self._set_dragover(True)
         else:
             super().dragEnterEvent(event)
 
     def dragMoveEvent(self, event) -> None:
-        if event.mimeData().hasFormat(_NOTE_MIME):
+        if event.mimeData().hasFormat(_NOTE_MIME) or event.mimeData().hasFormat(_TASK_MIME):
             event.acceptProposedAction()
         else:
             super().dragMoveEvent(event)
@@ -172,6 +173,12 @@ class _FolderDropBtn(QPushButton):
             event.acceptProposedAction()
             self._set_dragover(False)
             self.note_dropped.emit(note_id, self._folder_id)
+        elif event.mimeData().hasFormat(_TASK_MIME):
+            raw = event.mimeData().data(_TASK_MIME)
+            task_id = int(bytes(raw).decode())
+            event.acceptProposedAction()
+            self._set_dragover(False)
+            self.task_dropped.emit(task_id, self._folder_id)
         else:
             super().dropEvent(event)
 
@@ -232,9 +239,10 @@ class _ReminderDropBtn(QPushButton):
 
 
 class _NoteDropBtn(QPushButton):
-    """Sidebar notes button that accepts dragged ReminderCards for conversion."""
+    """Sidebar notes button that accepts dragged ReminderCards or TaskCards for conversion."""
 
     reminder_dropped = Signal(int)  # emits reminder_id
+    task_dropped     = Signal(int)  # emits task_id
 
     def __init__(self, text: str, tab_index: int, parent=None) -> None:
         super().__init__(text, parent)
@@ -243,14 +251,14 @@ class _NoteDropBtn(QPushButton):
         self.setAcceptDrops(True)
 
     def dragEnterEvent(self, event) -> None:
-        if event.mimeData().hasFormat(_REMINDER_MIME):
+        if event.mimeData().hasFormat(_REMINDER_MIME) or event.mimeData().hasFormat(_TASK_MIME):
             event.acceptProposedAction()
             self._set_dragover(True)
         else:
             super().dragEnterEvent(event)
 
     def dragMoveEvent(self, event) -> None:
-        if event.mimeData().hasFormat(_REMINDER_MIME):
+        if event.mimeData().hasFormat(_REMINDER_MIME) or event.mimeData().hasFormat(_TASK_MIME):
             event.acceptProposedAction()
         else:
             super().dragMoveEvent(event)
@@ -266,6 +274,12 @@ class _NoteDropBtn(QPushButton):
             event.acceptProposedAction()
             self._set_dragover(False)
             self.reminder_dropped.emit(reminder_id)
+        elif event.mimeData().hasFormat(_TASK_MIME):
+            raw = event.mimeData().data(_TASK_MIME)
+            task_id = int(bytes(raw).decode())
+            event.acceptProposedAction()
+            self._set_dragover(False)
+            self.task_dropped.emit(task_id)
         else:
             super().dropEvent(event)
 
@@ -441,6 +455,7 @@ class MainWindow(QMainWindow):
         all_notes_btn = _NoteDropBtn("  📝  All Notes", 4)
         all_notes_btn.clicked.connect(lambda checked: self._switch_tab(4))
         all_notes_btn.reminder_dropped.connect(self._on_reminder_dropped_on_notes)
+        all_notes_btn.task_dropped.connect(self._on_task_dropped_on_notes)
         layout.addWidget(all_notes_btn)
         self._tab_buttons.append(all_notes_btn)
 
@@ -954,6 +969,7 @@ class MainWindow(QMainWindow):
         btn = _FolderDropBtn(f"  📁  {folder.name}", folder.id)
         btn.clicked.connect(lambda checked, idx=new_idx: self._switch_tab(idx))
         btn.note_dropped.connect(self._on_note_moved_to_folder)
+        btn.task_dropped.connect(self._on_task_dropped_on_folder)
         self._sidebar_folder_container.layout().addWidget(btn)
         self._tab_buttons.append(btn)
 
@@ -991,6 +1007,43 @@ class MainWindow(QMainWindow):
             return
         dlg = ReminderDialog(self._user, self._scheduler, prefill_name=task.title, parent=self)
         dlg.reminder_saved.connect(self._on_reminder_saved)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            confirm = _ConfirmDialog(
+                f'Delete the original task "{task.title}"?',
+                confirm_label="Delete Task",
+                cancel_label="Keep Task",
+                safe_default=True,
+                parent=self,
+            )
+            if confirm.exec() == QDialog.DialogCode.Accepted:
+                self._task_service.delete_task(task_id)
+                self._refresh_tasks()
+
+    def _on_task_dropped_on_notes(self, task_id: int) -> None:
+        self._convert_task_to_note(task_id, folder_id=None)
+
+    def _on_task_dropped_on_folder(self, task_id: int, folder_id: int) -> None:
+        self._convert_task_to_note(task_id, folder_id=folder_id)
+
+    def _convert_task_to_note(self, task_id: int, folder_id) -> None:
+        task = self._task_service.get_task(task_id)
+        if task is None:
+            return
+        subs = TaskService.parse_subtasks(task)
+        body_lines = [
+            ("☑" if s.get("done") else "☐") + " " + s.get("title", "")
+            for s in subs
+        ]
+        body = "\n".join(body_lines)
+        dlg = NoteDialog(
+            self._user,
+            self._note_service,
+            folder_id=folder_id,
+            prefill_text=task.title,
+            prefill_body=body,
+            parent=self,
+        )
+        dlg.note_saved.connect(self._refresh_notes_preserve_selection)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             confirm = _ConfirmDialog(
                 f'Delete the original task "{task.title}"?',

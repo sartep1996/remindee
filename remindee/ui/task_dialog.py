@@ -131,7 +131,7 @@ class TaskDialog(QDialog):
         self._subtasks: list[dict] = (
             TaskService.parse_subtasks(task) if task else []
         )
-        self._sub_rows: list[tuple[QCheckBox, _SubtaskEdit, QWidget]] = []
+        self._sub_rows: list[tuple[QCheckBox, _SubtaskEdit, QWidget, list]] = []
         self._due_datetime: Optional[datetime] = None
         self._reminder_datetime: Optional[datetime] = None
 
@@ -399,6 +399,22 @@ class TaskDialog(QDialog):
         )
         row.addWidget(edit, stretch=1)
 
+        # Per-subtask reminder — only shown when scheduler is available
+        reminder_holder: list = [None]  # mutable [Optional[datetime]]
+        if self._scheduler is not None:
+            bell_btn = QPushButton("🔔")
+            bell_btn.setFixedSize(28, 28)
+            bell_btn.setToolTip("Set reminder for this subtask")
+            bell_btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; border: none;"
+                f" color: rgba({'200,180,160,0.55' if self._art_dark else '100,60,20,0.45'}); font-size: 13px; }}"
+                "QPushButton:hover { color: #FF6B35; }"
+            )
+            bell_btn.clicked.connect(
+                lambda checked, h=reminder_holder, b=bell_btn: self._pick_subtask_reminder(h, b)
+            )
+            row.addWidget(bell_btn)
+
         del_btn = QPushButton("✕")
         del_btn.setFixedSize(24, 24)
         del_btn.setStyleSheet(
@@ -413,27 +429,27 @@ class TaskDialog(QDialog):
 
         # Insert before the trailing stretch
         self._sub_layout.insertWidget(self._sub_layout.count() - 1, row_widget)
-        self._sub_rows.append((chk, edit, row_widget))
+        self._sub_rows.append((chk, edit, row_widget, reminder_holder))
         edit.setFocus()
 
     def _tab_to_next_row(self) -> None:
         """Called when Tab is pressed in a subtask edit: add new row if last, else focus next."""
         sender_edit = self.sender()
         idx = next(
-            (i for i, (_, e, _w) in enumerate(self._sub_rows) if e is sender_edit), None
+            (i for i, (_, e, _w, _r) in enumerate(self._sub_rows) if e is sender_edit), None
         )
         if idx is None:
             return
         if idx == len(self._sub_rows) - 1:
             self._add_subtask_row()
         else:
-            _, next_edit, _ = self._sub_rows[idx + 1]
+            next_edit = self._sub_rows[idx + 1][1]
             next_edit.setFocus()
 
     def _remove_subtask_row(
         self, widget: QWidget, chk: QCheckBox, edit: "_SubtaskEdit"
     ) -> None:
-        for i, (c, e, w) in enumerate(self._sub_rows):
+        for i, (c, e, w, _r) in enumerate(self._sub_rows):
             if c is chk and e is edit:
                 self._sub_rows.pop(i)
                 break
@@ -442,7 +458,7 @@ class TaskDialog(QDialog):
     def _move_row(self, widget: QWidget, direction: int) -> None:
         """Move subtask row up (-1) or down (+1)."""
         idx = next(
-            (i for i, (_c, _e, w) in enumerate(self._sub_rows) if w is widget), None
+            (i for i, (_c, _e, w, _r) in enumerate(self._sub_rows) if w is widget), None
         )
         if idx is None:
             return
@@ -495,6 +511,18 @@ class TaskDialog(QDialog):
             self._reminder_datetime = dlg.selected_datetime()
             self._reminder_btn.setText(self._reminder_datetime.strftime("%b %d %Y  %H:%M"))
 
+    def _pick_subtask_reminder(self, holder: list, btn: QPushButton) -> None:
+        dlg = _DatePickerDialog(initial=holder[0], parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            holder[0] = dlg.selected_datetime()
+            btn.setText(holder[0].strftime("%H:%M"))
+            btn.setToolTip(f"Reminder: {holder[0].strftime('%b %d %Y %H:%M')} — click to change")
+            btn.setStyleSheet(
+                "QPushButton { background: transparent; border: none;"
+                " color: #FF6B35; font-size: 12px; }"
+                "QPushButton:hover { color: #E85A25; }"
+            )
+
     # ── Save ──────────────────────────────────────────────────────────────────
 
     def _save(self) -> None:
@@ -509,7 +537,7 @@ class TaskDialog(QDialog):
 
         subtasks = [
             {"title": edit.text().strip(), "done": chk.isChecked()}
-            for chk, edit, _w in self._sub_rows
+            for chk, edit, _w, _rh in self._sub_rows
             if edit.text().strip()
         ]
         subs_json = json.dumps(subtasks) if subtasks else None
@@ -529,26 +557,37 @@ class TaskDialog(QDialog):
 
         self.task_saved.emit(task)
 
-        # Create a one-time reminder if requested
-        if (self._scheduler is not None
-                and getattr(self, "_reminder_check", None) is not None
-                and self._reminder_check.isChecked()
-                and self._reminder_datetime is not None):
+        # Schedule one-time reminders (task-level and per-subtask)
+        if self._scheduler is not None:
             from remindee.models.reminder import Reminder, FrequencyType
             from remindee.utils.database import get_session
-            with get_session() as session:
-                reminder = Reminder(
-                    user_id=self._user.id,
-                    name=title,
-                    frequency=FrequencyType.SPECIFIC,
-                    specific_datetime=self._reminder_datetime,
-                    is_active=True,
-                    is_done=False,
-                )
-                session.add(reminder)
-                session.flush()
-                session.refresh(reminder)
-                session.expunge(reminder)
-            self._scheduler.schedule_reminder(reminder)
+
+            to_remind: list[tuple[str, datetime]] = []
+
+            if (getattr(self, "_reminder_check", None) is not None
+                    and self._reminder_check.isChecked()
+                    and self._reminder_datetime is not None):
+                to_remind.append((title, self._reminder_datetime))
+
+            for _chk, edit, _w, reminder_holder in self._sub_rows:
+                sub_title = edit.text().strip()
+                if sub_title and reminder_holder[0] is not None:
+                    to_remind.append((sub_title, reminder_holder[0]))
+
+            for r_name, r_dt in to_remind:
+                with get_session() as session:
+                    r = Reminder(
+                        user_id=self._user.id,
+                        name=r_name,
+                        frequency=FrequencyType.SPECIFIC,
+                        specific_datetime=r_dt,
+                        is_active=True,
+                        is_done=False,
+                    )
+                    session.add(r)
+                    session.flush()
+                    session.refresh(r)
+                    session.expunge(r)
+                self._scheduler.schedule_reminder(r)
 
         self.accept()
