@@ -1193,24 +1193,17 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def show_quick_note(self) -> None:
-        if hasattr(self, "_quick_note") and self._quick_note.isVisible():
-            self._quick_note.raise_()
-            self._quick_note.activateWindow()
-            return
-        from remindee.ui.quick_note_dialog import QuickNoteDialog
-        dlg = QuickNoteDialog()
-        dlg.save_requested.connect(self._on_quick_save)
-        dlg.reminder_requested.connect(self._on_quick_reminder)
-        self._quick_note = dlg
-        dlg.show()
-        dlg.raise_()
-        dlg.activateWindow()
-        # macOS: bring REMINDEE to front so the dialog can receive key events
+        self._show_window()
         try:
             from AppKit import NSApplication
             NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
         except Exception:
             pass
+        dlg = ReminderDialog(
+            self._user, self._scheduler, quick_mode=True, parent=self
+        )
+        dlg.reminder_saved.connect(self._on_reminder_saved)
+        dlg.exec()
 
     @Slot(str)
     def _on_quick_save(self, text: str) -> None:

@@ -21,6 +21,18 @@ from PySide6.QtWidgets import (
     QSizePolicy,
 )
 
+
+class _QuickTextEdit(QTextEdit):
+    """QTextEdit that emits enter_pressed on bare Enter (quick-mode save trigger)."""
+    enter_pressed = Signal()
+
+    def keyPressEvent(self, event) -> None:
+        if (event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+                and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier)):
+            self.enter_pressed.emit()
+        else:
+            super().keyPressEvent(event)
+
 from remindee.models.reminder import Reminder, FrequencyType
 from remindee.utils.database import get_session
 from remindee.ui.styles import apply_calendar_palette
@@ -79,6 +91,7 @@ class ReminderDialog(QDialog):
         scheduler: "SchedulerService",
         reminder: Optional[Reminder] = None,
         prefill_name: str = "",
+        quick_mode: bool = False,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -87,6 +100,7 @@ class ReminderDialog(QDialog):
         self._reminder    = reminder
         self._edit_mode   = reminder is not None
         self._prefill_name = prefill_name
+        self._quick_mode  = quick_mode
 
         # ── Art palette ───────────────────────────────────────────────────
         # In edit mode use the same seed as the card so the palette matches.
@@ -253,15 +267,25 @@ class ReminderDialog(QDialog):
         self._name_edit.setObjectName("FormInput")
         self._name_edit.setPlaceholderText("What do you want to be reminded of?")
         self._name_edit.setStyleSheet(self._input_ss())
-        # Enter in name field → save (not Qt dialog default-accept)
-        self._name_edit.returnPressed.connect(self._save)
+        if self._quick_mode:
+            # Enter on title → move focus to details
+            self._name_edit.returnPressed.connect(self._focus_details)
+        else:
+            # Enter in name field → save (not Qt dialog default-accept)
+            self._name_edit.returnPressed.connect(self._save)
         layout.addWidget(self._name_edit)
 
         # Details
         layout.addWidget(self._lbl("More Details"))
-        self._details_edit = QTextEdit()
+        if self._quick_mode:
+            self._details_edit = _QuickTextEdit()
+            self._details_edit.enter_pressed.connect(self._save)
+        else:
+            self._details_edit = QTextEdit()
         self._details_edit.setObjectName("DetailsEdit")
-        self._details_edit.setPlaceholderText("Optional notes…")
+        self._details_edit.setPlaceholderText(
+            "Optional notes… (Enter to save)" if self._quick_mode else "Optional notes…"
+        )
         self._details_edit.setFixedHeight(84)
         if self._art_dark:
             self._details_edit.setStyleSheet(
@@ -384,12 +408,24 @@ class ReminderDialog(QDialog):
         lbl.setStyleSheet(self._label_ss())
         return lbl
 
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._name_edit.setFocus)
+
+    def _focus_details(self) -> None:
+        self._details_edit.setFocus()
+        self._details_edit.moveCursor(self._details_edit.textCursor().MoveOperation.End)
+
     # ── Keyboard ──────────────────────────────────────────────────────────────
 
     def keyPressEvent(self, event) -> None:
         key = event.key()
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            # Enter in QTextEdit should insert a newline, not save
+            if self._quick_mode and self._name_edit.hasFocus():
+                self._focus_details()
+                return
+            # Enter in QTextEdit should insert a newline, not save (unless quick mode handles it)
             if not self._details_edit.hasFocus():
                 self._save()
                 return
