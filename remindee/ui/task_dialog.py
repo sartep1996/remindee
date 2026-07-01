@@ -630,21 +630,24 @@ class TaskDialog(QDialog):
             from remindee.models.reminder import Reminder, FrequencyType
             from remindee.utils.database import get_session
 
-            to_remind: list[tuple[str, datetime]] = []
+            # (name, datetime, details)
+            to_remind: list[tuple[str, datetime, str | None]] = []
 
             if (getattr(self, "_reminder_check", None) is not None
                     and self._reminder_check.isChecked()
                     and self._reminder_datetime is not None):
-                to_remind.append((title, self._reminder_datetime))
+                to_remind.append((title, self._reminder_datetime, None))
 
+            task_link = f"📋 Task: {title}\ntask_id:{task.id}"
             for sub_title, r_dt in self._subtask_reminders.items():
-                to_remind.append((sub_title, r_dt))
+                to_remind.append((sub_title, r_dt, task_link))
 
-            for r_name, r_dt in to_remind:
+            for r_name, r_dt, r_details in to_remind:
                 with get_session() as session:
                     r = Reminder(
                         user_id=self._user.id,
                         name=r_name,
+                        details=r_details,
                         frequency=FrequencyType.SPECIFIC,
                         specific_datetime=r_dt,
                         is_active=True,

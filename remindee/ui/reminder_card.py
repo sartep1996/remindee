@@ -570,10 +570,27 @@ _DARK_BTN = (
 
 # ── Card widget ───────────────────────────────────────────────────────────────
 
+def _split_task_link(details: str) -> tuple[str, int | None]:
+    """Strip 'task_id:N' metadata from details. Returns (visible_text, task_id | None)."""
+    lines = details.split('\n')
+    task_id: int | None = None
+    visible: list[str] = []
+    for line in lines:
+        if line.startswith('task_id:'):
+            try:
+                task_id = int(line[8:].strip())
+            except ValueError:
+                visible.append(line)
+        else:
+            visible.append(line)
+    return '\n'.join(visible).strip(), task_id
+
+
 class ReminderCard(QFrame):
-    edit_requested   = Signal(object)
-    done_requested   = Signal(object)
-    delete_requested = Signal(object)
+    edit_requested      = Signal(object)
+    done_requested      = Signal(object)
+    delete_requested    = Signal(object)
+    open_task_requested = Signal(int)   # task_id
 
     def __init__(self, reminder: Reminder, parent=None) -> None:
         super().__init__(parent)
@@ -628,10 +645,41 @@ class ReminderCard(QFrame):
         outer.addLayout(top_row)
 
         if self._reminder.details:
-            det = _OutlinedLabel(self._reminder.details[:120])
-            det.setObjectName("CardDetails")
-            det.setWordWrap(True)
-            outer.addWidget(det)
+            visible_details, linked_task_id = _split_task_link(self._reminder.details)
+            if visible_details:
+                det = _OutlinedLabel(visible_details[:120])
+                det.setObjectName("CardDetails")
+                det.setWordWrap(True)
+                outer.addWidget(det)
+            if linked_task_id is not None:
+                if self._is_dark:
+                    open_ss = (
+                        "QPushButton { background: rgba(255,107,53,0.18);"
+                        " border: 1px solid rgba(255,107,53,0.40); border-radius: 10px;"
+                        " font-size: 11px; font-weight: 600;"
+                        " color: rgba(255,160,100,0.95); padding: 2px 10px; }"
+                        "QPushButton:hover { background: rgba(255,107,53,0.32); }"
+                    )
+                else:
+                    open_ss = (
+                        "QPushButton { background: rgba(255,107,53,0.10);"
+                        " border: 1px solid rgba(255,107,53,0.32); border-radius: 10px;"
+                        " font-size: 11px; font-weight: 600;"
+                        " color: #E85A20; padding: 2px 10px; }"
+                        "QPushButton:hover { background: rgba(255,107,53,0.22); }"
+                    )
+                open_btn = QPushButton("↗  Open task")
+                open_btn.setFixedHeight(26)
+                open_btn.setStyleSheet(open_ss)
+                open_btn.setToolTip("Open the task this reminder belongs to")
+                open_btn.clicked.connect(
+                    lambda checked, tid=linked_task_id: self.open_task_requested.emit(tid)
+                )
+                btn_row = QHBoxLayout()
+                btn_row.setContentsMargins(0, 2, 0, 0)
+                btn_row.addWidget(open_btn)
+                btn_row.addStretch()
+                outer.addLayout(btn_row)
 
         trigger_text = self._format_trigger()
         if trigger_text:

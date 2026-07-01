@@ -859,6 +859,7 @@ class MainWindow(QMainWindow):
             card.edit_requested.connect(self._open_edit_dialog)
             card.done_requested.connect(self._mark_done)
             card.delete_requested.connect(self._delete_reminder)
+            card.open_task_requested.connect(self._on_open_task_from_reminder)
             cards_layout.insertWidget(i, card)
 
     def _refresh_calendar_view(self) -> None:
@@ -905,6 +906,7 @@ class MainWindow(QMainWindow):
             card.edit_requested.connect(self._open_edit_dialog)
             card.done_requested.connect(self._mark_done)
             card.delete_requested.connect(self._delete_reminder)
+            card.open_task_requested.connect(self._on_open_task_from_reminder)
             self._cal_cards_layout.addWidget(card)
 
     # ── Notes refresh ────────────────────────────────────────────────────────
@@ -1043,10 +1045,22 @@ class MainWindow(QMainWindow):
         dlg = ReminderDialog(
             self._user, self._scheduler,
             prefill_name=sub_title,
-            prefill_details=f"📋 Task: {task_title}",
+            prefill_details=f"📋 Task: {task_title}\ntask_id:{task_id}",
             parent=self,
         )
         dlg.reminder_saved.connect(self._on_reminder_saved)
+        dlg.exec()
+
+    def _on_open_task_from_reminder(self, task_id: int) -> None:
+        task = self._task_service.get_task(task_id)
+        if task is None:
+            return
+        # Switch to tasks panel first so the user sees where they landed
+        self._content_stack.setCurrentIndex(5)
+        self._in_tasks = True
+        dlg = TaskDialog(self._user, self._task_service, task=task,
+                         scheduler=self._scheduler, parent=self)
+        dlg.task_saved.connect(lambda _: self._refresh_tasks())
         dlg.exec()
 
     def _on_task_dropped_on_notes(self, task_id: int) -> None:
