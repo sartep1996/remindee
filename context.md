@@ -29,18 +29,22 @@ remindee/
 │   ├── models/
 │   │   ├── base.py                # SQLAlchemy declarative Base
 │   │   ├── user.py                # User model (local + Google OAuth fields)
-│   │   └── reminder.py            # Reminder model + FrequencyType enum
+│   │   ├── reminder.py            # Reminder model + FrequencyType enum
+│   │   └── task.py                # Task model (title, body, subtasks JSON, due_date, status, font)
 │   ├── services/
 │   │   ├── auth_service.py        # LocalAuthService (bcrypt) + GoogleAuthService
 │   │   ├── scheduler_service.py   # SchedulerService + SchedulerSignals(QObject)
-│   │   └── notification_service.py# NotificationService + ActionBubble dialog
+│   │   ├── notification_service.py# NotificationService + ActionBubble dialog
+│   │   └── task_service.py        # TaskService: CRUD + parse_subtasks() + toggle_subtask()
 │   ├── ui/
 │   │   ├── styles.py              # Token-based theme system + apply_calendar_palette()
 │   │   ├── login_dialog.py        # Login + Register stacked pages, Google OAuth thread
 │   │   ├── main_window.py         # MainWindow: sidebar, views, FAB, tray
-│   │   ├── reminder_card.py       # ReminderCard widget + full card art system
+│   │   ├── reminder_card.py       # ReminderCard widget + full card art system + _split_task_link()
 │   │   ├── reminder_dialog.py     # Add/Edit reminder dialog with animated calendar
-│   │   └── settings_dialog.py     # Theme switcher dialog
+│   │   ├── settings_dialog.py     # Theme switcher dialog
+│   │   ├── task_card.py           # TaskCard widget + _SubtaskRow (with 🔔 bell button)
+│   │   └── task_dialog.py         # Add/Edit task dialog with inline body editor (_BodyEdit)
 │   ├── utils/
 │   │   ├── config.py              # dotenv + platformdirs DB path
 │   │   └── database.py            # engine, SessionLocal, init_db(), get_session()
@@ -79,6 +83,82 @@ remindee/
 ### Session management
 - Short-lived `get_session()` context manager (commit/rollback/close) per operation
 - SQLAlchemy objects are `expunge()`-d before the session closes so they can be used outside
+
+---
+
+## Tasks feature (`feature/notes-hybrid` branch)
+
+### Task model (`models/task.py`)
+
+| Column | Type | Notes |
+|---|---|---|
+| `title` | `String` | Task name |
+| `body` | `Text` | Free-form description lines; subtasks are `[ ] title` / `[x] title` prefixed lines |
+| `due_date` | `DateTime` | Optional deadline |
+| `status` | `String` | `"pending"` / `"done"` |
+| `font_family` | `String` | Per-task font (default `"Marker Felt"`) |
+| `user_id` | FK → User | Owner |
+
+Subtasks are stored inline in `body` as `[ ] title` (pending) and `[x] title` (done) lines mixed freely with description text. No separate subtask table.
+
+### TaskService (`services/task_service.py`)
+
+- `parse_subtasks(task)` → `list[dict]` — extracts `{ title, done, line_index }` from body
+- `toggle_subtask(task_id, index, done)` — flips the `[ ]`/`[x]` prefix on the body line at `index`
+- Standard CRUD: `create_task`, `get_task`, `list_tasks`, `update_task`, `delete_task`
+
+### TaskCard (`ui/task_card.py`)
+
+- Card art reuses the same seed/palette/style system as `ReminderCard`
+- `_SubtaskRow` widget: checkbox toggle + title label + **🔔 bell button** (right-aligned, orange-tinted, brightens on hover)
+  - Bell emits `reminder_clicked = Signal(int, str, str)` → `(task_id, task_title, sub_title)`
+- `TaskCard.subtask_reminder_requested = Signal(int, str, str)` forwards it to `MainWindow`
+- Thick red border on overdue tasks (`due_date < now`)
+
+### Task Edit dialog (`ui/task_dialog.py`)
+
+Body is a single `_BodyEdit(QTextEdit)` subclass that serves as both description and subtask container:
+
+- Lines starting with `[ ] ` or `[x] ` are subtasks; all other lines are description
+- **Click `[ ]`/`[x]` prefix** (first 4 chars of line): `mousePressEvent` toggles done state in-place
+- **Right-click on subtask line**: context menu → "🔔 Set reminder for…"
+- **`☑ subtask` orange chip**: inserts `[ ] ` prefix at end of body
+- **`🔔 reminder` chip**: enabled only when cursor is on a subtask line (via `cursorPositionChanged`); label updates to show existing reminder time; opens `_DatePickerDialog`
+- `_subtask_reminders: dict[str, datetime]` tracks per-subtask reminder picks during the edit session
+- On `_save()`: body lines parsed → subtasks stored in `body`; for each subtask reminder, a `Reminder` is created with `details = f"📋 Task: {title}\ntask_id:{task.id}"`
+
+### Subtask reminders and task linking
+
+When a reminder is created from a subtask (either via task dialog bell chip or task card 🔔 button), its `details` field embeds a machine-readable tag:
+
+```
+📋 Task: My Task Title
+task_id:42
+```
+
+`_split_task_link(details: str) -> tuple[str, int | None]` in `reminder_card.py` strips the `task_id:N` line before display and returns the task id. Called in both `ReminderCard._build()` and `ReminderDialog._populate()` / `__init__`.
+
+**`↗ Open task` button**: visible on `ReminderCard` and in `ReminderDialog` edit mode whenever `task_id` is found. Emits `open_task_requested = Signal(int)` → `MainWindow._on_open_task_from_reminder(task_id)` which switches to the Tasks panel and opens `TaskDialog` for that task.
+
+On `ReminderDialog._save()`, the `task_id:N` line is re-injected into `details` so the link survives edits.
+
+---
+
+## Font system
+
+- **Per-reminder font**: `font_family` column on `Reminder`; picker is a grouped `QComboBox` with 19 fonts sorted into categories (system, handwriting, mono, serif, rounded)
+- **Per-task font**: same column on `Task`; same picker in `TaskDialog`
+- **App-wide default**: `"Marker Felt"` applied on login
+- Login dialog has a "reset font" button to clear per-app override
+
+---
+
+## REM shortcut (quick reminder)
+
+Global keyboard shortcut (`⌘R` or configurable) opens a `ReminderDialog` in `quick_mode=True`:
+- Name field auto-focused
+- Save button's `setDefault(False)` so Enter inside name field doesn't fire prematurely
+- Closes silently on Esc
 
 ---
 
@@ -227,6 +307,9 @@ Tokens replaced at runtime by `load_qss(theme)` in `styles.py`. Longer tokens ar
 | Parallel lines drawn horizontal | Style function used horizontal stripe logic | Rewrote using slope-based `drawLine` for true diagonal stripes |
 | Dark palettes muddy on light cards | A-colours like `QColor(139,0,0)` (lum = 20) wash out | All A-colours now have luminance ≥ 90 |
 | Dialog not matching card art | Dialog ignored `_is_dark` and always drew a light veil | Dialog now mirrors exact card seed logic: `_art_dark`, `_art_style`, correct veil and text colours |
+| `↗ Open task` not appearing | Old reminders created before `task_id:` embedding have `details=None` | Button only appears on reminders created via subtask bell path after the feature was added; existing reminders are unaffected |
+| f-string quote conflict | `f"🔔 Set reminder for "{sub_title}""` — inner `"` terminated the string | Switched outer quotes to single: `f'🔔 Set reminder for "{sub_title}"'` |
+| U+2029 paragraph separator | `QTextEdit.selectedText()` uses U+2029 (not `\n`) as line separator | `_toggle_subtask_line()` replaces U+2029 with `\n` before processing |
 
 ---
 
@@ -260,3 +343,28 @@ Database is stored at `~/Library/Application Support/remindee/remindee.db` (macO
 | `fb230cf` | feature/varied-card-art | Gradient background + Enter-to-save for ReminderDialog |
 | `5c919da` | feature/varied-card-art | Dialog art matches card exactly (dark mode fix) |
 | `81eec94` | feature/varied-card-art | Notification inner background uses card art system |
+| `8d55113` | feature/notes-hybrid | docs(context): update project context with card art, notification, and dialog improvements |
+| `c7f120a` | feature/notes-hybrid | feat(card): open edit dialog on double-click |
+| `6c18238` | feature/notes-hybrid | feat(card): remove edit button, enlarge done and delete buttons |
+| `a078055` | feature/notes-hybrid | feat(fonts): Marker Felt app-wide default + per-task font picker |
+| `23d4959` | feature/notes-hybrid | feat(fonts): grouped font picker with 19 fonts, login reset, skip login |
+| `323a24e` | feature/notes-hybrid | fix(tasks): resolve pyflakes errors for Tasks feature |
+| `6963609` | feature/notes-hybrid | fix(tasks): migrate missing columns; fix QDateTime API for Python 3.9 |
+| `1d5d555` | feature/notes-hybrid | fix(tasks): add status column to Task model |
+| `fd6b668` | feature/notes-hybrid | fix(tasks): DB schema conflicts, calendar, task done toggle |
+| `b4fa9e2` | feature/notes-hybrid | fix(tasks): replace QDateTimeEdit popup with explicit calendar dialog |
+| `15e1875` | feature/notes-hybrid | feat(tasks): premium UI — animated checks, collapsible subtasks, quick-add, smart due dates |
+| `0eb9479` | feature/notes-hybrid | feat(tasks): add reminders to tasks — drag-to-reminder + in-dialog reminder picker |
+| `eaeedd6` | feature/notes-hybrid | feat(tasks): subtask reminders + drag task-to-notes conversion |
+| `83140c3` | feature/notes-hybrid | feat(tasks): thick red border on overdue task cards |
+| `81a03a7` | feature/notes-hybrid | feat(reminders): REM shortcut opens ReminderDialog with keyboard-first flow |
+| `423aa8f` | feature/notes-hybrid | fix(reminders): disable save button default in quick_mode |
+| `5fdd5f5` | feature/notes-hybrid | feat(tasks): body field, selection→subtask, subtask drag-to-reminder with task link |
+| `eb0cbd4` | feature/notes-hybrid | refactor(tasks): inline subtasks in body text area |
+| `21934b0` | feature/notes-hybrid | polish(tasks): orange pill-chip style for subtask toggle button |
+| `049e612` | feature/notes-hybrid | feat(tasks): click `[ ]`/`[x]` prefix in body to toggle subtask done state |
+| `c6b601d` | feature/notes-hybrid | feat(tasks): per-subtask reminders via right-click context menu |
+| `bcd4a1c` | feature/notes-hybrid | feat(tasks): 🔔 bell button on each subtask row opens ReminderDialog |
+| `f182eba` | feature/notes-hybrid | feat(tasks): visible 🔔 reminder chip in body header for subtasks |
+| `a6a909d` | feature/notes-hybrid | feat(reminders): `↗ Open task` button on subtask-linked reminder cards |
+| `cdceca9` | feature/notes-hybrid | feat(reminders): `↗ Open task` button inside ReminderDialog for subtask reminders |
