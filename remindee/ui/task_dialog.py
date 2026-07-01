@@ -5,25 +5,13 @@ import random
 from datetime import datetime
 from typing import Optional
 
-from PySide6.QtCore import Qt, QDate, QRectF, Signal
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtCore import QDate, QRectF, Signal
+from PySide6.QtGui import QColor, QFont, QPainter, QTextCursor
 from PySide6.QtWidgets import (
     QCalendarWidget, QCheckBox, QDialog, QDialogButtonBox,
-    QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea,
+    QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QSpinBox, QTextEdit, QVBoxLayout, QWidget,
 )
-
-
-class _SubtaskEdit(QLineEdit):
-    """QLineEdit that emits tab_pressed instead of cycling focus on Tab key."""
-
-    tab_pressed = Signal()
-
-    def keyPressEvent(self, event) -> None:
-        if event.key() == Qt.Key.Key_Tab:
-            self.tab_pressed.emit()
-        else:
-            super().keyPressEvent(event)
 
 from remindee.models.task import Task
 from remindee.models.user import User
@@ -55,7 +43,6 @@ class _DatePickerDialog(QDialog):
             self._cal.setSelectedDate(QDate(initial.year, initial.month, initial.day))
         layout.addWidget(self._cal)
 
-        # Time row
         time_row = QHBoxLayout()
         time_row.setSpacing(6)
         time_row.addWidget(QLabel("Time:"))
@@ -92,7 +79,13 @@ class _DatePickerDialog(QDialog):
 
 
 class TaskDialog(QDialog):
-    """Create / edit a task — title, optional due date, subtask list, optional reminder."""
+    """Create / edit a task.
+
+    The body text area is the single editing surface — plain lines are the
+    description, lines prefixed with '[ ] ' or '[x] ' are subtasks.
+    Clicking '☐ Make subtask' toggles the prefix on the current line or
+    every selected line.
+    """
 
     task_saved = Signal(object)  # Task
 
@@ -124,14 +117,10 @@ class TaskDialog(QDialog):
         self.setAutoFillBackground(False)
         self.setObjectName("TaskDialog")
         self.setWindowTitle("Edit Task" if task else "New Task")
-        self.setMinimumSize(480, 540)
-        self.resize(540, 660)
+        self.setMinimumSize(480, 480)
+        self.resize(540, 580)
         self.setModal(True)
 
-        self._subtasks: list[dict] = (
-            TaskService.parse_subtasks(task) if task else []
-        )
-        self._sub_rows: list[tuple[QCheckBox, _SubtaskEdit, QWidget, list]] = []
         self._due_datetime: Optional[datetime] = None
         self._reminder_datetime: Optional[datetime] = None
 
@@ -145,10 +134,16 @@ class TaskDialog(QDialog):
                 self._due_check.setChecked(True)
                 self._due_btn.setText(dt.strftime("%b %d %Y  %H:%M"))
                 self._due_btn.setEnabled(True)
+            # Merge description + existing subtasks into unified body
+            body_lines: list[str] = []
             if task.description:
-                self._desc_edit.setPlainText(task.description)
-            for sub in self._subtasks:
-                self._add_subtask_row(sub.get("title", ""), sub.get("done", False))
+                body_lines.extend(task.description.split('\n'))
+            for sub in TaskService.parse_subtasks(task):
+                prefix = '[x] ' if sub.get('done') else '[ ] '
+                body_lines.append(prefix + sub.get('title', ''))
+            if body_lines:
+                self._body_edit.setPlainText('\n'.join(body_lines))
+
         self._title_edit.setFocus()
 
     # ── Background art ────────────────────────────────────────────────────────
@@ -240,47 +235,56 @@ class TaskDialog(QDialog):
         )
         layout.addWidget(self._title_edit)
 
-        # Body / description
+        # Body header
         body_hdr = QHBoxLayout()
         body_hdr.setSpacing(8)
-        body_lbl = QLabel("Body")
+        body_lbl = QLabel("Notes & subtasks")
         body_lbl.setStyleSheet(
             f"background: transparent; color: {self._tc()}; font-size: 13px; font-weight: 600;"
         )
         body_hdr.addWidget(body_lbl)
+
+        hint_lbl = QLabel("[ ] undone  ·  [x] done")
+        hint_lbl.setStyleSheet(
+            f"background: transparent; color: {self._tc()}; font-size: 11px;"
+        )
+        body_hdr.addWidget(hint_lbl)
         body_hdr.addStretch()
 
-        self._to_subtask_btn = QPushButton("↳ Make subtask")
+        self._to_subtask_btn = QPushButton("☐  Make subtask")
         self._to_subtask_btn.setFixedHeight(26)
-        self._to_subtask_btn.setEnabled(False)
-        self._to_subtask_btn.setToolTip("Convert selected text to a subtask")
+        self._to_subtask_btn.setToolTip(
+            "Toggle [ ] prefix on current line or selection"
+        )
         self._to_subtask_btn.setStyleSheet(self._btn_ss(primary=False))
-        self._to_subtask_btn.clicked.connect(self._selection_to_subtask)
+        self._to_subtask_btn.clicked.connect(self._toggle_subtask_line)
         body_hdr.addWidget(self._to_subtask_btn)
         layout.addLayout(body_hdr)
 
-        self._desc_edit = QTextEdit()
-        self._desc_edit.setPlaceholderText(
-            "Write task description here…  select text then click ↳ Make subtask to convert it"
+        # Body — fills available space; [ ] / [x] lines are subtasks
+        self._body_edit = QTextEdit()
+        self._body_edit.setPlaceholderText(
+            "Write notes here…\n\n"
+            "Select any line and click ☐ Make subtask to turn it into a checklist item.\n"
+            "Or type  [ ] item text  yourself."
         )
-        self._desc_edit.setFixedHeight(120)
+        self._body_edit.setMinimumHeight(180)
         desc_focus = "rgba(255,255,255,0.40)" if self._art_dark else "#FF6B35"
         if self._art_dark:
-            self._desc_edit.setStyleSheet(
+            self._body_edit.setStyleSheet(
                 "QTextEdit { background: rgba(255,255,255,0.08);"
                 " border: 1.5px solid rgba(255,255,255,0.18); border-radius: 10px;"
                 " color: rgba(238,222,205,0.97); font-size: 13px; padding: 9px 12px; }"
                 f"QTextEdit:focus {{ border-color: {desc_focus}; }}"
             )
         else:
-            self._desc_edit.setStyleSheet(
+            self._body_edit.setStyleSheet(
                 "QTextEdit { background: rgba(255,255,255,0.82);"
                 " border: 1.5px solid rgba(255,107,53,0.22); border-radius: 10px;"
                 " color: #1C0800; font-size: 13px; padding: 9px 12px; }"
                 f"QTextEdit:focus {{ border-color: {desc_focus}; }}"
             )
-        self._desc_edit.selectionChanged.connect(self._on_desc_selection_changed)
-        layout.addWidget(self._desc_edit)
+        layout.addWidget(self._body_edit, stretch=1)
 
         # Due date row
         due_row = QHBoxLayout()
@@ -297,14 +301,15 @@ class TaskDialog(QDialog):
         self._due_btn.setStyleSheet(
             f"QPushButton {{ {self._input_ss()} text-align: left; }}"
             f"QPushButton:disabled {{ opacity: 0.45; }}"
-            f"QPushButton:hover:enabled {{ border-color: {'rgba(255,255,255,0.40)' if self._art_dark else '#FF6B35'}; }}"
+            f"QPushButton:hover:enabled {{ border-color: "
+            f"{'rgba(255,255,255,0.40)' if self._art_dark else '#FF6B35'}; }}"
         )
         self._due_btn.clicked.connect(self._pick_due_date)
         due_row.addWidget(self._due_btn, stretch=1)
         self._due_check.toggled.connect(self._on_due_check_toggled)
         layout.addLayout(due_row)
 
-        # Reminder row (only shown when scheduler is provided)
+        # Reminder row (only when scheduler is provided)
         if self._scheduler is not None:
             reminder_row = QHBoxLayout()
             reminder_row.setSpacing(10)
@@ -327,42 +332,6 @@ class TaskDialog(QDialog):
             reminder_row.addWidget(self._reminder_btn, stretch=1)
             self._reminder_check.toggled.connect(self._on_reminder_check_toggled)
             layout.addLayout(reminder_row)
-
-        # Subtasks label + add button
-        sub_hdr = QHBoxLayout()
-        sub_lbl = QLabel("Subtasks")
-        sub_lbl.setStyleSheet(
-            f"background: transparent; color: {self._tc()}; font-size: 13px; font-weight: 600;"
-        )
-        sub_hdr.addWidget(sub_lbl)
-        sub_hdr.addStretch()
-        add_sub_btn = QPushButton("+ Add subtask")
-        add_sub_btn.setFixedHeight(28)
-        add_sub_btn.setStyleSheet(self._btn_ss(primary=False))
-        add_sub_btn.clicked.connect(lambda: self._add_subtask_row())
-        sub_hdr.addWidget(add_sub_btn)
-        layout.addLayout(sub_hdr)
-
-        # Scrollable subtask area
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setAutoFillBackground(False)
-        scroll.viewport().setAutoFillBackground(False)
-        scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
-            "QScrollBar:vertical { width: 5px; background: transparent; }"
-            "QScrollBar::handle:vertical { background: rgba(0,0,0,0.12); border-radius: 2px; }"
-        )
-
-        self._sub_container = QWidget()
-        self._sub_container.setStyleSheet("background: transparent;")
-        self._sub_layout = QVBoxLayout(self._sub_container)
-        self._sub_layout.setContentsMargins(0, 0, 0, 0)
-        self._sub_layout.setSpacing(6)
-        self._sub_layout.addStretch()
-        scroll.setWidget(self._sub_container)
-        layout.addWidget(scroll, stretch=1)
 
         return pane
 
@@ -402,145 +371,28 @@ class TaskDialog(QDialog):
 
         return bar
 
-    # ── Subtask rows ──────────────────────────────────────────────────────────
+    # ── Body / subtask toggle ─────────────────────────────────────────────────
 
-    def _add_subtask_row(self, title: str = "", done: bool = False) -> None:
-        row_widget = QWidget()
-        row_widget.setStyleSheet("background: transparent;")
-        row = QHBoxLayout(row_widget)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(4)
+    def _toggle_subtask_line(self) -> None:
+        """Toggle [ ] / [x] prefix on the current line or every selected line."""
+        cursor = self._body_edit.textCursor()
+        if not cursor.hasSelection():
+            cursor.select(QTextCursor.SelectionType.LineUnderCursor)
 
-        btn_ss = (
-            f"QPushButton {{ background: transparent; border: none;"
-            f" color: {self._tc()}; font-size: 10px; }}"
-            "QPushButton:hover { color: #FF6B35; }"
-        )
-
-        up_btn = QPushButton("↑")
-        up_btn.setFixedSize(20, 20)
-        up_btn.setStyleSheet(btn_ss)
-        up_btn.clicked.connect(lambda: self._move_row(row_widget, -1))
-        row.addWidget(up_btn)
-
-        down_btn = QPushButton("↓")
-        down_btn.setFixedSize(20, 20)
-        down_btn.setStyleSheet(btn_ss)
-        down_btn.clicked.connect(lambda: self._move_row(row_widget, 1))
-        row.addWidget(down_btn)
-
-        chk = QCheckBox()
-        chk.setChecked(done)
-        chk.setStyleSheet(f"QCheckBox {{ background: transparent; color: {self._tc()}; }}")
-        row.addWidget(chk)
-
-        edit = _SubtaskEdit(title)
-        edit.setPlaceholderText("Subtask…")
-        edit.setStyleSheet(
-            f"QLineEdit {{ background: rgba(255,255,255,{'0.08' if self._art_dark else '0.60'});"
-            f" border: 1px solid rgba({'255,255,255,0.15' if self._art_dark else '0,0,0,0.12'});"
-            f" border-radius: 7px; color: {self._tc()}; font-size: 13px; padding: 5px 10px; }}"
-        )
-        row.addWidget(edit, stretch=1)
-
-        # Per-subtask reminder — only shown when scheduler is available
-        reminder_holder: list = [None]  # mutable [Optional[datetime]]
-        if self._scheduler is not None:
-            bell_btn = QPushButton("🔔")
-            bell_btn.setFixedSize(28, 28)
-            bell_btn.setToolTip("Set reminder for this subtask")
-            bell_btn.setStyleSheet(
-                f"QPushButton {{ background: transparent; border: none;"
-                f" color: rgba({'200,180,160,0.55' if self._art_dark else '100,60,20,0.45'}); font-size: 13px; }}"
-                "QPushButton:hover { color: #FF6B35; }"
-            )
-            bell_btn.clicked.connect(
-                lambda checked, h=reminder_holder, b=bell_btn: self._pick_subtask_reminder(h, b)
-            )
-            row.addWidget(bell_btn)
-
-        del_btn = QPushButton("✕")
-        del_btn.setFixedSize(24, 24)
-        del_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; border: none; color: {self._tc()}; font-size: 11px; }}"
-            "QPushButton:hover { color: #EF4444; }"
-        )
-        del_btn.clicked.connect(lambda: self._remove_subtask_row(row_widget, chk, edit))
-        row.addWidget(del_btn)
-
-        # Tab on the edit adds a new row and focuses it
-        edit.tab_pressed.connect(self._tab_to_next_row)
-
-        # Insert before the trailing stretch
-        self._sub_layout.insertWidget(self._sub_layout.count() - 1, row_widget)
-        self._sub_rows.append((chk, edit, row_widget, reminder_holder))
-        edit.setFocus()
-
-    def _tab_to_next_row(self) -> None:
-        """Called when Tab is pressed in a subtask edit: add new row if last, else focus next."""
-        sender_edit = self.sender()
-        idx = next(
-            (i for i, (_, e, _w, _r) in enumerate(self._sub_rows) if e is sender_edit), None
-        )
-        if idx is None:
-            return
-        if idx == len(self._sub_rows) - 1:
-            self._add_subtask_row()
-        else:
-            next_edit = self._sub_rows[idx + 1][1]
-            next_edit.setFocus()
-
-    def _remove_subtask_row(
-        self, widget: QWidget, chk: QCheckBox, edit: "_SubtaskEdit"
-    ) -> None:
-        for i, (c, e, w, _r) in enumerate(self._sub_rows):
-            if c is chk and e is edit:
-                self._sub_rows.pop(i)
-                break
-        widget.deleteLater()
-
-    def _move_row(self, widget: QWidget, direction: int) -> None:
-        """Move subtask row up (-1) or down (+1)."""
-        idx = next(
-            (i for i, (_c, _e, w, _r) in enumerate(self._sub_rows) if w is widget), None
-        )
-        if idx is None:
-            return
-        new_idx = idx + direction
-        if new_idx < 0 or new_idx >= len(self._sub_rows):
+        selected = cursor.selectedText()
+        if not selected.strip():
             return
 
-        # Swap in _sub_rows list
-        self._sub_rows[idx], self._sub_rows[new_idx] = (
-            self._sub_rows[new_idx],
-            self._sub_rows[idx],
-        )
-
-        # Swap widgets in layout
-        low = min(idx, new_idx)
-        high = max(idx, new_idx)
-        w_low  = self._sub_rows[low][2]
-        w_high = self._sub_rows[high][2]
-
-        self._sub_layout.removeWidget(w_low)
-        self._sub_layout.removeWidget(w_high)
-        self._sub_layout.insertWidget(low, w_low)
-        self._sub_layout.insertWidget(high, w_high)
-
-    # ── Body / description helpers ────────────────────────────────────────────
-
-    def _on_desc_selection_changed(self) -> None:
-        has_sel = bool(self._desc_edit.textCursor().selectedText().strip())
-        self._to_subtask_btn.setEnabled(has_sel)
-
-    def _selection_to_subtask(self) -> None:
-        cursor = self._desc_edit.textCursor()
-        text = cursor.selectedText().strip()
-        if not text:
-            return
-        cursor.removeSelectedText()
-        self._desc_edit.setTextCursor(cursor)
-        self._add_subtask_row(text)
+        # QTextEdit uses U+2029 (paragraph separator) between lines in selectedText()
+        lines = selected.replace(' ', '\n').split('\n')
+        new_lines = []
+        for line in lines:
+            if line.startswith('[ ] ') or line.startswith('[x] '):
+                new_lines.append(line[4:])
+            else:
+                new_lines.append('[ ] ' + line)
+        cursor.insertText('\n'.join(new_lines))
+        self._body_edit.setTextCursor(cursor)
 
     # ── Due date helpers ──────────────────────────────────────────────────────
 
@@ -570,18 +422,6 @@ class TaskDialog(QDialog):
             self._reminder_datetime = dlg.selected_datetime()
             self._reminder_btn.setText(self._reminder_datetime.strftime("%b %d %Y  %H:%M"))
 
-    def _pick_subtask_reminder(self, holder: list, btn: QPushButton) -> None:
-        dlg = _DatePickerDialog(initial=holder[0], parent=self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            holder[0] = dlg.selected_datetime()
-            btn.setText(holder[0].strftime("%H:%M"))
-            btn.setToolTip(f"Reminder: {holder[0].strftime('%b %d %Y %H:%M')} — click to change")
-            btn.setStyleSheet(
-                "QPushButton { background: transparent; border: none;"
-                " color: #FF6B35; font-size: 12px; }"
-                "QPushButton:hover { color: #E85A25; }"
-            )
-
     # ── Save ──────────────────────────────────────────────────────────────────
 
     def _save(self) -> None:
@@ -594,13 +434,18 @@ class TaskDialog(QDialog):
         if self._due_check.isChecked():
             due_date = self._due_datetime
 
-        subtasks = [
-            {"title": edit.text().strip(), "done": chk.isChecked()}
-            for chk, edit, _w, _rh in self._sub_rows
-            if edit.text().strip()
-        ]
+        # Parse body: lines prefixed with [ ] or [x] become subtasks
+        subtasks: list[dict] = []
+        desc_lines: list[str] = []
+        for line in self._body_edit.toPlainText().split('\n'):
+            if line.startswith('[ ] '):
+                subtasks.append({'title': line[4:].strip(), 'done': False})
+            elif line.startswith('[x] '):
+                subtasks.append({'title': line[4:].strip(), 'done': True})
+            else:
+                desc_lines.append(line)
+        description = '\n'.join(desc_lines).strip() or None
         subs_json = json.dumps(subtasks) if subtasks else None
-        description = self._desc_edit.toPlainText().strip() or None
 
         if self._task is None:
             task = self._task_service.create_task(
@@ -619,30 +464,20 @@ class TaskDialog(QDialog):
 
         self.task_saved.emit(task)
 
-        # Schedule one-time reminders (task-level and per-subtask)
+        # Schedule task-level reminder
         if self._scheduler is not None:
             from remindee.models.reminder import Reminder, FrequencyType
             from remindee.utils.database import get_session
 
-            to_remind: list[tuple[str, datetime]] = []
-
             if (getattr(self, "_reminder_check", None) is not None
                     and self._reminder_check.isChecked()
                     and self._reminder_datetime is not None):
-                to_remind.append((title, self._reminder_datetime))
-
-            for _chk, edit, _w, reminder_holder in self._sub_rows:
-                sub_title = edit.text().strip()
-                if sub_title and reminder_holder[0] is not None:
-                    to_remind.append((sub_title, reminder_holder[0]))
-
-            for r_name, r_dt in to_remind:
                 with get_session() as session:
                     r = Reminder(
                         user_id=self._user.id,
-                        name=r_name,
+                        name=title,
                         frequency=FrequencyType.SPECIFIC,
-                        specific_datetime=r_dt,
+                        specific_datetime=self._reminder_datetime,
                         is_active=True,
                         is_done=False,
                     )
