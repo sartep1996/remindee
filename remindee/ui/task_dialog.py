@@ -243,20 +243,35 @@ class TaskDialog(QDialog):
             f"background: transparent; color: {self._tc()}; font-size: 13px; font-weight: 600;"
         )
         body_hdr.addWidget(body_lbl)
-
-        hint_lbl = QLabel("[ ] undone  ·  [x] done")
-        hint_lbl.setStyleSheet(
-            f"background: transparent; color: {self._tc()}; font-size: 11px;"
-        )
-        body_hdr.addWidget(hint_lbl)
         body_hdr.addStretch()
 
-        self._to_subtask_btn = QPushButton("☐  Make subtask")
-        self._to_subtask_btn.setFixedHeight(26)
+        if self._art_dark:
+            chip_ss = (
+                "QPushButton { background: rgba(255,107,53,0.18);"
+                " border: 1.5px solid rgba(255,107,53,0.45); border-radius: 12px;"
+                " font-size: 12px; font-weight: 600;"
+                " color: rgba(255,160,100,0.95); padding: 0 13px; }"
+                "QPushButton:hover { background: rgba(255,107,53,0.32);"
+                " border-color: rgba(255,107,53,0.70); }"
+                "QPushButton:pressed { background: rgba(255,107,53,0.44); }"
+            )
+        else:
+            chip_ss = (
+                "QPushButton { background: rgba(255,107,53,0.10);"
+                " border: 1.5px solid rgba(255,107,53,0.38); border-radius: 12px;"
+                " font-size: 12px; font-weight: 600;"
+                " color: #E85A20; padding: 0 13px; }"
+                "QPushButton:hover { background: rgba(255,107,53,0.22);"
+                " border-color: rgba(255,107,53,0.65); }"
+                "QPushButton:pressed { background: rgba(255,107,53,0.32); }"
+            )
+
+        self._to_subtask_btn = QPushButton("☑  subtask")
+        self._to_subtask_btn.setFixedHeight(28)
         self._to_subtask_btn.setToolTip(
-            "Toggle [ ] prefix on current line or selection"
+            "Toggle [ ] / [x] subtask prefix on the current line or selection"
         )
-        self._to_subtask_btn.setStyleSheet(self._btn_ss(primary=False))
+        self._to_subtask_btn.setStyleSheet(chip_ss)
         self._to_subtask_btn.clicked.connect(self._toggle_subtask_line)
         body_hdr.addWidget(self._to_subtask_btn)
         layout.addLayout(body_hdr)
