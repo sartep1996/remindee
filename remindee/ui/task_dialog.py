@@ -317,6 +317,41 @@ class TaskDialog(QDialog):
         self._to_subtask_btn.setStyleSheet(chip_ss)
         self._to_subtask_btn.clicked.connect(self._toggle_subtask_line)
         body_hdr.addWidget(self._to_subtask_btn)
+
+        # Bell chip — enabled only when cursor sits on a subtask line
+        if self._scheduler is not None:
+            if self._art_dark:
+                bell_ss = (
+                    "QPushButton { background: rgba(255,107,53,0.18);"
+                    " border: 1.5px solid rgba(255,107,53,0.45); border-radius: 12px;"
+                    " font-size: 12px; font-weight: 600;"
+                    " color: rgba(255,160,100,0.95); padding: 0 13px; }"
+                    "QPushButton:enabled:hover { background: rgba(255,107,53,0.32);"
+                    " border-color: rgba(255,107,53,0.70); }"
+                    "QPushButton:disabled { color: rgba(200,160,120,0.30);"
+                    " border-color: rgba(255,107,53,0.15);"
+                    " background: rgba(255,107,53,0.05); }"
+                )
+            else:
+                bell_ss = (
+                    "QPushButton { background: rgba(255,107,53,0.10);"
+                    " border: 1.5px solid rgba(255,107,53,0.38); border-radius: 12px;"
+                    " font-size: 12px; font-weight: 600;"
+                    " color: #E85A20; padding: 0 13px; }"
+                    "QPushButton:enabled:hover { background: rgba(255,107,53,0.22);"
+                    " border-color: rgba(255,107,53,0.65); }"
+                    "QPushButton:disabled { color: rgba(180,120,80,0.30);"
+                    " border-color: rgba(255,107,53,0.15);"
+                    " background: rgba(255,107,53,0.04); }"
+                )
+            self._sub_bell_btn = QPushButton("🔔  reminder")
+            self._sub_bell_btn.setFixedHeight(28)
+            self._sub_bell_btn.setEnabled(False)
+            self._sub_bell_btn.setToolTip("Set reminder for the subtask on this line")
+            self._sub_bell_btn.setStyleSheet(bell_ss)
+            self._sub_bell_btn.clicked.connect(self._bell_for_current_subtask)
+            body_hdr.addWidget(self._sub_bell_btn)
+
         layout.addLayout(body_hdr)
 
         # Body — fills available space; [ ] / [x] lines are subtasks
@@ -357,6 +392,7 @@ class TaskDialog(QDialog):
             self._body_edit.subtask_reminder_requested.connect(
                 self._on_subtask_reminder_requested
             )
+            self._body_edit.cursorPositionChanged.connect(self._on_body_cursor_moved)
 
         # Due date row
         due_row = QHBoxLayout()
@@ -468,12 +504,45 @@ class TaskDialog(QDialog):
 
     # ── Subtask reminder helpers ──────────────────────────────────────────────
 
+    def _current_subtask_title(self) -> str:
+        """Return the title of the subtask line under the cursor, or '' if not on one."""
+        cursor = self._body_edit.textCursor()
+        cursor.select(QTextCursor.SelectionType.LineUnderCursor)
+        line = cursor.selectedText()
+        if line.startswith('[ ] ') or line.startswith('[x] '):
+            return line[4:].strip()
+        return ""
+
+    def _on_body_cursor_moved(self) -> None:
+        sub_title = self._current_subtask_title()
+        self._sub_bell_btn.setEnabled(bool(sub_title))
+        if sub_title:
+            existing = self._subtask_reminders.get(sub_title)
+            if existing:
+                self._sub_bell_btn.setText(f"🔔  {existing.strftime('%b %d  %H:%M')}")
+            else:
+                self._sub_bell_btn.setText("🔔  reminder")
+        else:
+            self._sub_bell_btn.setText("🔔  reminder")
+
+    def _bell_for_current_subtask(self) -> None:
+        sub_title = self._current_subtask_title()
+        if not sub_title:
+            return
+        existing = self._subtask_reminders.get(sub_title)
+        dlg = _DatePickerDialog(initial=existing, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._subtask_reminders[sub_title] = dlg.selected_datetime()
+            self._refresh_sub_rem_label()
+            self._on_body_cursor_moved()  # update button label to show chosen time
+
     def _on_subtask_reminder_requested(self, sub_title: str) -> None:
         existing = self._subtask_reminders.get(sub_title)
         dlg = _DatePickerDialog(initial=existing, parent=self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self._subtask_reminders[sub_title] = dlg.selected_datetime()
             self._refresh_sub_rem_label()
+            self._on_body_cursor_moved()
 
     def _refresh_sub_rem_label(self) -> None:
         if not self._subtask_reminders:
