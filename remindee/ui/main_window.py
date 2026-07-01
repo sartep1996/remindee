@@ -599,6 +599,7 @@ class MainWindow(QMainWindow):
             card.delete_requested.connect(self._on_task_delete)
             card.done_toggled.connect(self._on_task_done_toggled)
             card.subtask_toggled.connect(self._on_subtask_toggled)
+            card.subtask_added.connect(self._on_subtask_added)
             layout.insertWidget(i, card)
 
     def _on_task_add(self) -> None:
@@ -623,8 +624,19 @@ class MainWindow(QMainWindow):
         self._task_service.toggle_done(task_id, done)
         self._refresh_tasks()
 
+    def _on_subtask_added(self, task_id: int, title: str) -> None:
+        self._task_service.add_subtask(task_id, title)
+        self._refresh_tasks()
+
     def _on_subtask_toggled(self, task_id: int, idx: int, done: bool) -> None:
-        self._task_service.toggle_subtask(task_id, idx, done)
+        updated = self._task_service.toggle_subtask(task_id, idx, done)
+        # Auto-complete parent when ALL subtasks become done
+        subs = TaskService.parse_subtasks(updated)
+        if subs and all(s.get("done") for s in subs) and not updated.is_done:
+            self._task_service.toggle_done(task_id, True)
+        elif subs and not all(s.get("done") for s in subs) and updated.is_done:
+            # Un-complete parent when a subtask is unchecked
+            self._task_service.toggle_done(task_id, False)
         self._refresh_tasks()
 
     def _build_list_view(self, label: str) -> QWidget:

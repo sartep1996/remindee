@@ -71,6 +71,22 @@ class TaskService:
             subs[idx]["done"] = done
         return self.update_task(task_id, subtasks=json.dumps(subs))
 
+    def add_subtask(self, task_id: int, title: str) -> Task:
+        task = self.get_task(task_id)
+        if task is None:
+            raise ValueError(task_id)
+        subs = json.loads(task.subtasks) if task.subtasks else []
+        subs.append({"title": title, "done": False})
+        return self.update_task(task_id, subtasks=json.dumps(subs))
+
+    def reorder_subtasks(self, task_id: int, new_order: list) -> Task:
+        task = self.get_task(task_id)
+        if task is None:
+            raise ValueError(task_id)
+        subs = json.loads(task.subtasks) if task.subtasks else []
+        reordered = [subs[i] for i in new_order if i < len(subs)]
+        return self.update_task(task_id, subtasks=json.dumps(reordered))
+
     def delete_task(self, task_id: int) -> None:
         with get_session() as session:
             task = session.query(Task).filter(Task.id == task_id).one()

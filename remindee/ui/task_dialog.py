@@ -13,6 +13,18 @@ from PySide6.QtWidgets import (
     QSpinBox, QVBoxLayout, QWidget,
 )
 
+
+class _SubtaskEdit(QLineEdit):
+    """QLineEdit that emits tab_pressed instead of cycling focus on Tab key."""
+
+    tab_pressed = Signal()
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Tab:
+            self.tab_pressed.emit()
+        else:
+            super().keyPressEvent(event)
+
 from remindee.models.task import Task
 from remindee.models.user import User
 from remindee.services.task_service import TaskService
@@ -117,7 +129,7 @@ class TaskDialog(QDialog):
         self._subtasks: list[dict] = (
             TaskService.parse_subtasks(task) if task else []
         )
-        self._sub_rows: list[tuple[QCheckBox, QLineEdit]] = []
+        self._sub_rows: list[tuple[QCheckBox, _SubtaskEdit, QWidget]] = []
         self._due_datetime: Optional[datetime] = None
 
         self._build()
@@ -326,14 +338,32 @@ class TaskDialog(QDialog):
         row_widget.setStyleSheet("background: transparent;")
         row = QHBoxLayout(row_widget)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(8)
+        row.setSpacing(4)
+
+        btn_ss = (
+            f"QPushButton {{ background: transparent; border: none;"
+            f" color: {self._tc()}; font-size: 10px; }}"
+            "QPushButton:hover { color: #FF6B35; }"
+        )
+
+        up_btn = QPushButton("↑")
+        up_btn.setFixedSize(20, 20)
+        up_btn.setStyleSheet(btn_ss)
+        up_btn.clicked.connect(lambda: self._move_row(row_widget, -1))
+        row.addWidget(up_btn)
+
+        down_btn = QPushButton("↓")
+        down_btn.setFixedSize(20, 20)
+        down_btn.setStyleSheet(btn_ss)
+        down_btn.clicked.connect(lambda: self._move_row(row_widget, 1))
+        row.addWidget(down_btn)
 
         chk = QCheckBox()
         chk.setChecked(done)
         chk.setStyleSheet(f"QCheckBox {{ background: transparent; color: {self._tc()}; }}")
         row.addWidget(chk)
 
-        edit = QLineEdit(title)
+        edit = _SubtaskEdit(title)
         edit.setPlaceholderText("Subtask…")
         edit.setStyleSheet(
             f"QLineEdit {{ background: rgba(255,255,255,{'0.08' if self._art_dark else '0.60'});"
@@ -351,15 +381,64 @@ class TaskDialog(QDialog):
         del_btn.clicked.connect(lambda: self._remove_subtask_row(row_widget, chk, edit))
         row.addWidget(del_btn)
 
+        # Tab on the edit adds a new row and focuses it
+        edit.tab_pressed.connect(self._tab_to_next_row)
+
         # Insert before the trailing stretch
         self._sub_layout.insertWidget(self._sub_layout.count() - 1, row_widget)
-        self._sub_rows.append((chk, edit))
+        self._sub_rows.append((chk, edit, row_widget))
+        edit.setFocus()
 
-    def _remove_subtask_row(self, widget: QWidget, chk: QCheckBox, edit: QLineEdit) -> None:
-        pair = (chk, edit)
-        if pair in self._sub_rows:
-            self._sub_rows.remove(pair)
+    def _tab_to_next_row(self) -> None:
+        """Called when Tab is pressed in a subtask edit: add new row if last, else focus next."""
+        sender_edit = self.sender()
+        idx = next(
+            (i for i, (_, e, _w) in enumerate(self._sub_rows) if e is sender_edit), None
+        )
+        if idx is None:
+            return
+        if idx == len(self._sub_rows) - 1:
+            self._add_subtask_row()
+        else:
+            _, next_edit, _ = self._sub_rows[idx + 1]
+            next_edit.setFocus()
+
+    def _remove_subtask_row(
+        self, widget: QWidget, chk: QCheckBox, edit: "_SubtaskEdit"
+    ) -> None:
+        for i, (c, e, w) in enumerate(self._sub_rows):
+            if c is chk and e is edit:
+                self._sub_rows.pop(i)
+                break
         widget.deleteLater()
+
+    def _move_row(self, widget: QWidget, direction: int) -> None:
+        """Move subtask row up (-1) or down (+1)."""
+        idx = next(
+            (i for i, (_c, _e, w) in enumerate(self._sub_rows) if w is widget), None
+        )
+        if idx is None:
+            return
+        new_idx = idx + direction
+        if new_idx < 0 or new_idx >= len(self._sub_rows):
+            return
+
+        # Swap in _sub_rows list
+        self._sub_rows[idx], self._sub_rows[new_idx] = (
+            self._sub_rows[new_idx],
+            self._sub_rows[idx],
+        )
+
+        # Swap widgets in layout
+        low = min(idx, new_idx)
+        high = max(idx, new_idx)
+        w_low  = self._sub_rows[low][2]
+        w_high = self._sub_rows[high][2]
+
+        self._sub_layout.removeWidget(w_low)
+        self._sub_layout.removeWidget(w_high)
+        self._sub_layout.insertWidget(low, w_low)
+        self._sub_layout.insertWidget(high, w_high)
 
     # ── Due date helpers ──────────────────────────────────────────────────────
 
@@ -389,7 +468,7 @@ class TaskDialog(QDialog):
 
         subtasks = [
             {"title": edit.text().strip(), "done": chk.isChecked()}
-            for chk, edit in self._sub_rows
+            for chk, edit, _w in self._sub_rows
             if edit.text().strip()
         ]
         subs_json = json.dumps(subtasks) if subtasks else None
