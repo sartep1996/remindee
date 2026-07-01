@@ -634,15 +634,24 @@ class TaskCard(QFrame):
 
         p.setClipping(False)
 
-        # Border: green when done, orange otherwise
+        # Border: green when done, thick red when overdue, orange otherwise
+        is_overdue = (
+            not self._task.is_done
+            and self._task.due_date is not None
+            and self._task.due_date.date() < datetime.utcnow().date()
+        )
         if self._task.is_done:
-            alpha = 180 if self._hovered else 120
-            col   = QColor(34, 197, 94, alpha)
+            col   = QColor(34, 197, 94, 180 if self._hovered else 120)
+            width = 1.5
+        elif is_overdue:
+            col   = QColor(220, 38, 38, 230 if self._hovered else 200)
+            width = 3.5
         else:
             alpha = 220 if self._hovered else (110 if self._is_dark else 70)
             col   = QColor(255, 145, 90, alpha) if self._is_dark else QColor(255, 107, 53, alpha)
+            width = 1.5
 
-        p.setPen(QPen(col, 1.5))
+        p.setPen(QPen(col, width))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(r, radius, radius)
 
