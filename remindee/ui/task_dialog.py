@@ -10,7 +10,7 @@ from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
     QCalendarWidget, QCheckBox, QDialog, QDialogButtonBox,
     QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea,
-    QSpinBox, QVBoxLayout, QWidget,
+    QSpinBox, QTextEdit, QVBoxLayout, QWidget,
 )
 
 
@@ -124,8 +124,8 @@ class TaskDialog(QDialog):
         self.setAutoFillBackground(False)
         self.setObjectName("TaskDialog")
         self.setWindowTitle("Edit Task" if task else "New Task")
-        self.setMinimumSize(480, 420)
-        self.resize(520, 500)
+        self.setMinimumSize(480, 540)
+        self.resize(540, 660)
         self.setModal(True)
 
         self._subtasks: list[dict] = (
@@ -145,6 +145,8 @@ class TaskDialog(QDialog):
                 self._due_check.setChecked(True)
                 self._due_btn.setText(dt.strftime("%b %d %Y  %H:%M"))
                 self._due_btn.setEnabled(True)
+            if task.description:
+                self._desc_edit.setPlainText(task.description)
             for sub in self._subtasks:
                 self._add_subtask_row(sub.get("title", ""), sub.get("done", False))
         self._title_edit.setFocus()
@@ -237,6 +239,48 @@ class TaskDialog(QDialog):
             f"QLineEdit:focus {{ border-color: {'rgba(255,255,255,0.40)' if self._art_dark else '#FF6B35'}; }}"
         )
         layout.addWidget(self._title_edit)
+
+        # Body / description
+        body_hdr = QHBoxLayout()
+        body_hdr.setSpacing(8)
+        body_lbl = QLabel("Body")
+        body_lbl.setStyleSheet(
+            f"background: transparent; color: {self._tc()}; font-size: 13px; font-weight: 600;"
+        )
+        body_hdr.addWidget(body_lbl)
+        body_hdr.addStretch()
+
+        self._to_subtask_btn = QPushButton("↳ Make subtask")
+        self._to_subtask_btn.setFixedHeight(26)
+        self._to_subtask_btn.setEnabled(False)
+        self._to_subtask_btn.setToolTip("Convert selected text to a subtask")
+        self._to_subtask_btn.setStyleSheet(self._btn_ss(primary=False))
+        self._to_subtask_btn.clicked.connect(self._selection_to_subtask)
+        body_hdr.addWidget(self._to_subtask_btn)
+        layout.addLayout(body_hdr)
+
+        self._desc_edit = QTextEdit()
+        self._desc_edit.setPlaceholderText(
+            "Write task description here…  select text then click ↳ Make subtask to convert it"
+        )
+        self._desc_edit.setFixedHeight(120)
+        desc_focus = "rgba(255,255,255,0.40)" if self._art_dark else "#FF6B35"
+        if self._art_dark:
+            self._desc_edit.setStyleSheet(
+                "QTextEdit { background: rgba(255,255,255,0.08);"
+                " border: 1.5px solid rgba(255,255,255,0.18); border-radius: 10px;"
+                " color: rgba(238,222,205,0.97); font-size: 13px; padding: 9px 12px; }"
+                f"QTextEdit:focus {{ border-color: {desc_focus}; }}"
+            )
+        else:
+            self._desc_edit.setStyleSheet(
+                "QTextEdit { background: rgba(255,255,255,0.82);"
+                " border: 1.5px solid rgba(255,107,53,0.22); border-radius: 10px;"
+                " color: #1C0800; font-size: 13px; padding: 9px 12px; }"
+                f"QTextEdit:focus {{ border-color: {desc_focus}; }}"
+            )
+        self._desc_edit.selectionChanged.connect(self._on_desc_selection_changed)
+        layout.addWidget(self._desc_edit)
 
         # Due date row
         due_row = QHBoxLayout()
@@ -483,6 +527,21 @@ class TaskDialog(QDialog):
         self._sub_layout.insertWidget(low, w_low)
         self._sub_layout.insertWidget(high, w_high)
 
+    # ── Body / description helpers ────────────────────────────────────────────
+
+    def _on_desc_selection_changed(self) -> None:
+        has_sel = bool(self._desc_edit.textCursor().selectedText().strip())
+        self._to_subtask_btn.setEnabled(has_sel)
+
+    def _selection_to_subtask(self) -> None:
+        cursor = self._desc_edit.textCursor()
+        text = cursor.selectedText().strip()
+        if not text:
+            return
+        cursor.removeSelectedText()
+        self._desc_edit.setTextCursor(cursor)
+        self._add_subtask_row(text)
+
     # ── Due date helpers ──────────────────────────────────────────────────────
 
     def _on_due_check_toggled(self, checked: bool) -> None:
@@ -541,10 +600,12 @@ class TaskDialog(QDialog):
             if edit.text().strip()
         ]
         subs_json = json.dumps(subtasks) if subtasks else None
+        description = self._desc_edit.toPlainText().strip() or None
 
         if self._task is None:
             task = self._task_service.create_task(
-                self._user.id, title, due_date=due_date, subtasks=subtasks or None
+                self._user.id, title, due_date=due_date,
+                subtasks=subtasks or None, description=description,
             )
         else:
             task = self._task_service.update_task(
@@ -552,6 +613,7 @@ class TaskDialog(QDialog):
                 title=title,
                 due_date=due_date,
                 subtasks=subs_json,
+                description=description,
                 updated_at=datetime.utcnow(),
             )
 

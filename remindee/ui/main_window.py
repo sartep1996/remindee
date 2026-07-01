@@ -135,6 +135,7 @@ _SIDEBAR_TABS = [
 _NOTE_MIME     = "application/x-remindee-note-id"
 _REMINDER_MIME = "application/x-remindee-reminder-id"
 _TASK_MIME     = "application/x-remindee-task-id"
+_SUBTASK_MIME  = "application/x-remindee-subtask"
 
 
 class _FolderDropBtn(QPushButton):
@@ -191,23 +192,28 @@ class _FolderDropBtn(QPushButton):
 class _ReminderDropBtn(QPushButton):
     """Sidebar reminder-view button that accepts dragged NoteCards or TaskCards for conversion."""
 
-    note_dropped = Signal(int)  # emits note_id
-    task_dropped = Signal(int)  # emits task_id
+    note_dropped    = Signal(int)           # emits note_id
+    task_dropped    = Signal(int)           # emits task_id
+    subtask_dropped = Signal(int, str, str) # emits (task_id, task_title, sub_title)
 
     def __init__(self, text: str, parent=None) -> None:
         super().__init__(text, parent)
         self.setObjectName("SidebarBtn")
         self.setAcceptDrops(True)
 
+    def _accepts(self, mime) -> bool:
+        return (mime.hasFormat(_NOTE_MIME) or mime.hasFormat(_TASK_MIME)
+                or mime.hasFormat(_SUBTASK_MIME))
+
     def dragEnterEvent(self, event) -> None:
-        if event.mimeData().hasFormat(_NOTE_MIME) or event.mimeData().hasFormat(_TASK_MIME):
+        if self._accepts(event.mimeData()):
             event.acceptProposedAction()
             self._set_dragover(True)
         else:
             super().dragEnterEvent(event)
 
     def dragMoveEvent(self, event) -> None:
-        if event.mimeData().hasFormat(_NOTE_MIME) or event.mimeData().hasFormat(_TASK_MIME):
+        if self._accepts(event.mimeData()):
             event.acceptProposedAction()
         else:
             super().dragMoveEvent(event)
@@ -217,18 +223,23 @@ class _ReminderDropBtn(QPushButton):
         super().dragLeaveEvent(event)
 
     def dropEvent(self, event) -> None:
-        if event.mimeData().hasFormat(_NOTE_MIME):
-            raw = event.mimeData().data(_NOTE_MIME)
-            note_id = int(bytes(raw).decode())
+        mime = event.mimeData()
+        if mime.hasFormat(_NOTE_MIME):
+            note_id = int(bytes(mime.data(_NOTE_MIME)).decode())
             event.acceptProposedAction()
             self._set_dragover(False)
             self.note_dropped.emit(note_id)
-        elif event.mimeData().hasFormat(_TASK_MIME):
-            raw = event.mimeData().data(_TASK_MIME)
-            task_id = int(bytes(raw).decode())
+        elif mime.hasFormat(_TASK_MIME):
+            task_id = int(bytes(mime.data(_TASK_MIME)).decode())
             event.acceptProposedAction()
             self._set_dragover(False)
             self.task_dropped.emit(task_id)
+        elif mime.hasFormat(_SUBTASK_MIME):
+            parts = bytes(mime.data(_SUBTASK_MIME)).decode().split("\n", 2)
+            task_id, task_title, sub_title = int(parts[0]), parts[1], parts[2]
+            event.acceptProposedAction()
+            self._set_dragover(False)
+            self.subtask_dropped.emit(task_id, task_title, sub_title)
         else:
             super().dropEvent(event)
 
@@ -438,6 +449,7 @@ class MainWindow(QMainWindow):
             btn.clicked.connect(lambda checked, idx=i: self._switch_tab(idx))
             btn.note_dropped.connect(self._on_note_dropped_on_reminder)
             btn.task_dropped.connect(self._on_task_dropped_on_reminder)
+            btn.subtask_dropped.connect(self._on_subtask_dropped_on_reminder)
             layout.addWidget(btn)
             self._tab_buttons.append(btn)
 
@@ -1005,7 +1017,12 @@ class MainWindow(QMainWindow):
         task = self._task_service.get_task(task_id)
         if task is None:
             return
-        dlg = ReminderDialog(self._user, self._scheduler, prefill_name=task.title, parent=self)
+        dlg = ReminderDialog(
+            self._user, self._scheduler,
+            prefill_name=task.title,
+            prefill_details=f"📋 Task: {task.title}",
+            parent=self,
+        )
         dlg.reminder_saved.connect(self._on_reminder_saved)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             confirm = _ConfirmDialog(
@@ -1018,6 +1035,18 @@ class MainWindow(QMainWindow):
             if confirm.exec() == QDialog.DialogCode.Accepted:
                 self._task_service.delete_task(task_id)
                 self._refresh_tasks()
+
+    def _on_subtask_dropped_on_reminder(
+        self, task_id: int, task_title: str, sub_title: str
+    ) -> None:
+        dlg = ReminderDialog(
+            self._user, self._scheduler,
+            prefill_name=sub_title,
+            prefill_details=f"📋 Task: {task_title}",
+            parent=self,
+        )
+        dlg.reminder_saved.connect(self._on_reminder_saved)
+        dlg.exec()
 
     def _on_task_dropped_on_notes(self, task_id: int) -> None:
         self._convert_task_to_note(task_id, folder_id=None)

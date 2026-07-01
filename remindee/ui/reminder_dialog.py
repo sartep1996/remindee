@@ -91,16 +91,18 @@ class ReminderDialog(QDialog):
         scheduler: "SchedulerService",
         reminder: Optional[Reminder] = None,
         prefill_name: str = "",
+        prefill_details: str = "",
         quick_mode: bool = False,
         parent=None,
     ) -> None:
         super().__init__(parent)
-        self._user        = user
-        self._scheduler   = scheduler
-        self._reminder    = reminder
-        self._edit_mode   = reminder is not None
-        self._prefill_name = prefill_name
-        self._quick_mode  = quick_mode
+        self._user            = user
+        self._scheduler       = scheduler
+        self._reminder        = reminder
+        self._edit_mode       = reminder is not None
+        self._prefill_name    = prefill_name
+        self._prefill_details = prefill_details
+        self._quick_mode      = quick_mode
 
         # ── Art palette ───────────────────────────────────────────────────
         # In edit mode use the same seed as the card so the palette matches.
@@ -124,8 +126,11 @@ class ReminderDialog(QDialog):
         self._build()
         if self._edit_mode:
             self._populate()
-        elif self._prefill_name:
-            self._name_edit.setText(self._prefill_name)
+        else:
+            if self._prefill_name:
+                self._name_edit.setText(self._prefill_name)
+            if self._prefill_details:
+                self._details_edit.setPlainText(self._prefill_details)
 
     # ── Custom background ─────────────────────────────────────────────────────
 

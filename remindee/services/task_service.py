@@ -35,6 +35,7 @@ class TaskService:
         title: str,
         due_date: Optional[datetime] = None,
         subtasks: Optional[list[dict]] = None,
+        description: Optional[str] = None,
     ) -> Task:
         with get_session() as session:
             task = Task(
@@ -42,6 +43,7 @@ class TaskService:
                 title=title,
                 due_date=due_date,
                 subtasks=json.dumps(subtasks) if subtasks else None,
+                description=description,
             )
             session.add(task)
             session.flush()

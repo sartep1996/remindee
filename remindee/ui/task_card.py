@@ -17,7 +17,8 @@ from PySide6.QtCore import QMimeData
 from remindee.models.task import Task
 from remindee.services.task_service import TaskService
 
-_TASK_MIME = "application/x-remindee-task-id"
+_TASK_MIME    = "application/x-remindee-task-id"
+_SUBTASK_MIME = "application/x-remindee-subtask"
 from remindee.ui.reminder_card import (
     _DARK_BASES, _DARK_BTN, _SCHEMES, _STYLES,
     _OutlinedLabel, _draw_base, _draw_grain,
@@ -121,12 +122,18 @@ class _SubtaskRow(QWidget):
         done: bool,
         is_dark: bool,
         is_last: bool,
+        task_id: int = 0,
+        task_title: str = "",
         parent=None,
     ) -> None:
         super().__init__(parent)
-        self._idx = idx
-        self._is_dark = is_dark
-        self._is_last = is_last
+        self._idx        = idx
+        self._is_dark    = is_dark
+        self._is_last    = is_last
+        self._sub_title  = title
+        self._task_id    = task_id
+        self._task_title = task_title
+        self._drag_start = None
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(26, 1, 0, 1)
@@ -156,6 +163,25 @@ class _SubtaskRow(QWidget):
         self._chk.set_checked(new_done)
         self._apply_label_style(new_done)
         self.toggled.emit(self._idx, new_done)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start = event.position().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if not (event.buttons() & Qt.MouseButton.LeftButton):
+            return super().mouseMoveEvent(event)
+        if self._drag_start is None:
+            return super().mouseMoveEvent(event)
+        if (event.position().toPoint() - self._drag_start).manhattanLength() < QApplication.startDragDistance():
+            return super().mouseMoveEvent(event)
+        data = f"{self._task_id}\n{self._task_title}\n{self._sub_title}".encode()
+        mime = QMimeData()
+        mime.setData(_SUBTASK_MIME, data)
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        drag.exec(Qt.DropAction.MoveAction)
 
     def paintEvent(self, event) -> None:
         p = QPainter(self)
@@ -398,6 +424,21 @@ class TaskCard(QFrame):
             for btn in (edit_btn, del_btn):
                 btn.setStyleSheet(_DARK_BTN)
 
+        # ── Description preview ───────────────────────────────────────────────
+        if self._task.description:
+            desc_text = self._task.description.replace("\n", " ")
+            if len(desc_text) > 100:
+                desc_text = desc_text[:100] + "…"
+            desc_lbl = _OutlinedLabel(desc_text)
+            desc_lbl.setObjectName("CardTrigger")
+            color = "rgba(200,185,165,0.75)" if self._is_dark else "rgba(60,30,0,0.55)"
+            desc_lbl.setStyleSheet(f"color: {color}; font-size: 12px;")
+            desc_row = QHBoxLayout()
+            desc_row.setContentsMargins(34, 0, 4, 0)
+            desc_row.addWidget(desc_lbl)
+            desc_row.addStretch()
+            outer.addLayout(desc_row)
+
         # ── Due date badge ────────────────────────────────────────────────────
         if self._task.due_date:
             due_lbl = _OutlinedLabel(self._format_due())
@@ -447,6 +488,8 @@ class TaskCard(QFrame):
                     done=sub.get("done", False),
                     is_dark=self._is_dark,
                     is_last=is_last,
+                    task_id=self._task.id,
+                    task_title=self._task.title,
                 )
                 row.toggled.connect(
                     lambda i, d, tid=self._task.id: self.subtask_toggled.emit(tid, i, d)
