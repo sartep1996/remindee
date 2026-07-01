@@ -134,6 +134,7 @@ _SIDEBAR_TABS = [
 
 _NOTE_MIME     = "application/x-remindee-note-id"
 _REMINDER_MIME = "application/x-remindee-reminder-id"
+_TASK_MIME     = "application/x-remindee-task-id"
 
 
 class _FolderDropBtn(QPushButton):
@@ -181,9 +182,10 @@ class _FolderDropBtn(QPushButton):
 
 
 class _ReminderDropBtn(QPushButton):
-    """Sidebar reminder-view button that accepts dragged NoteCards for conversion."""
+    """Sidebar reminder-view button that accepts dragged NoteCards or TaskCards for conversion."""
 
     note_dropped = Signal(int)  # emits note_id
+    task_dropped = Signal(int)  # emits task_id
 
     def __init__(self, text: str, parent=None) -> None:
         super().__init__(text, parent)
@@ -191,14 +193,14 @@ class _ReminderDropBtn(QPushButton):
         self.setAcceptDrops(True)
 
     def dragEnterEvent(self, event) -> None:
-        if event.mimeData().hasFormat(_NOTE_MIME):
+        if event.mimeData().hasFormat(_NOTE_MIME) or event.mimeData().hasFormat(_TASK_MIME):
             event.acceptProposedAction()
             self._set_dragover(True)
         else:
             super().dragEnterEvent(event)
 
     def dragMoveEvent(self, event) -> None:
-        if event.mimeData().hasFormat(_NOTE_MIME):
+        if event.mimeData().hasFormat(_NOTE_MIME) or event.mimeData().hasFormat(_TASK_MIME):
             event.acceptProposedAction()
         else:
             super().dragMoveEvent(event)
@@ -214,6 +216,12 @@ class _ReminderDropBtn(QPushButton):
             event.acceptProposedAction()
             self._set_dragover(False)
             self.note_dropped.emit(note_id)
+        elif event.mimeData().hasFormat(_TASK_MIME):
+            raw = event.mimeData().data(_TASK_MIME)
+            task_id = int(bytes(raw).decode())
+            event.acceptProposedAction()
+            self._set_dragover(False)
+            self.task_dropped.emit(task_id)
         else:
             super().dropEvent(event)
 
@@ -415,6 +423,7 @@ class MainWindow(QMainWindow):
             btn.setCheckable(False)
             btn.clicked.connect(lambda checked, idx=i: self._switch_tab(idx))
             btn.note_dropped.connect(self._on_note_dropped_on_reminder)
+            btn.task_dropped.connect(self._on_task_dropped_on_reminder)
             layout.addWidget(btn)
             self._tab_buttons.append(btn)
 
@@ -603,13 +612,14 @@ class MainWindow(QMainWindow):
             layout.insertWidget(i, card)
 
     def _on_task_add(self) -> None:
-        dlg = TaskDialog(self._user, self._task_service, parent=self)
+        dlg = TaskDialog(self._user, self._task_service, scheduler=self._scheduler, parent=self)
         dlg.task_saved.connect(lambda _: self._refresh_tasks())
         dlg.exec()
 
     def _on_task_edit(self, task) -> None:
         fresh = self._task_service.get_task(task.id)
-        dlg = TaskDialog(self._user, self._task_service, task=fresh or task, parent=self)
+        dlg = TaskDialog(self._user, self._task_service, task=fresh or task,
+                         scheduler=self._scheduler, parent=self)
         dlg.task_saved.connect(lambda _: self._refresh_tasks())
         dlg.exec()
 
@@ -974,6 +984,24 @@ class MainWindow(QMainWindow):
             if confirm.exec() == QDialog.DialogCode.Accepted:
                 self._note_service.delete_note(note_id)
                 self._refresh_notes_preserve_selection()
+
+    def _on_task_dropped_on_reminder(self, task_id: int) -> None:
+        task = self._task_service.get_task(task_id)
+        if task is None:
+            return
+        dlg = ReminderDialog(self._user, self._scheduler, prefill_name=task.title, parent=self)
+        dlg.reminder_saved.connect(self._on_reminder_saved)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            confirm = _ConfirmDialog(
+                f'Delete the original task "{task.title}"?',
+                confirm_label="Delete Task",
+                cancel_label="Keep Task",
+                safe_default=True,
+                parent=self,
+            )
+            if confirm.exec() == QDialog.DialogCode.Accepted:
+                self._task_service.delete_task(task_id)
+                self._refresh_tasks()
 
     def _on_reminder_dropped_on_notes(self, reminder_id: int) -> None:
         with get_session() as session:

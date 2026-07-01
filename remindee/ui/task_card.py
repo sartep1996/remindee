@@ -7,14 +7,17 @@ from typing import Optional
 from PySide6.QtCore import (
     Property, QEasingCurve, QPointF, QPropertyAnimation, QRectF, Qt, Signal,
 )
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QDrag, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLineEdit, QPushButton, QSizePolicy,
+    QApplication, QFrame, QHBoxLayout, QLineEdit, QPushButton, QSizePolicy,
     QVBoxLayout, QWidget,
 )
+from PySide6.QtCore import QMimeData
 
 from remindee.models.task import Task
 from remindee.services.task_service import TaskService
+
+_TASK_MIME = "application/x-remindee-task-id"
 from remindee.ui.reminder_card import (
     _DARK_BASES, _DARK_BTN, _SCHEMES, _STYLES,
     _OutlinedLabel, _draw_base, _draw_grain,
@@ -552,6 +555,34 @@ class TaskCard(QFrame):
 
     def mouseDoubleClickEvent(self, event) -> None:
         self.edit_requested.emit(self._task)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start = event.position().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if not (event.buttons() & Qt.MouseButton.LeftButton):
+            return super().mouseMoveEvent(event)
+        start = getattr(self, "_drag_start", None)
+        if start is None:
+            return super().mouseMoveEvent(event)
+        if (event.position().toPoint() - start).manhattanLength() < QApplication.startDragDistance():
+            return super().mouseMoveEvent(event)
+        self._start_task_drag()
+
+    def _start_task_drag(self) -> None:
+        mime = QMimeData()
+        mime.setData(_TASK_MIME, str(self._task.id).encode())
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        pix = self.grab()
+        drag.setPixmap(pix.scaled(
+            pix.width() // 2, pix.height() // 2,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        ))
+        drag.exec(Qt.DropAction.MoveAction)
 
     def enterEvent(self, event) -> None:
         self._hovered = True

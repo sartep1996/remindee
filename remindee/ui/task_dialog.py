@@ -92,7 +92,7 @@ class _DatePickerDialog(QDialog):
 
 
 class TaskDialog(QDialog):
-    """Create / edit a task — title, optional due date, subtask list."""
+    """Create / edit a task — title, optional due date, subtask list, optional reminder."""
 
     task_saved = Signal(object)  # Task
 
@@ -101,12 +101,14 @@ class TaskDialog(QDialog):
         user: User,
         task_service: TaskService,
         task: Optional[Task] = None,
+        scheduler=None,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self._user         = user
         self._task_service = task_service
         self._task         = task
+        self._scheduler    = scheduler
 
         # Art seed mirrors TaskCard
         if task and task.id:
@@ -131,6 +133,7 @@ class TaskDialog(QDialog):
         )
         self._sub_rows: list[tuple[QCheckBox, _SubtaskEdit, QWidget]] = []
         self._due_datetime: Optional[datetime] = None
+        self._reminder_datetime: Optional[datetime] = None
 
         self._build()
 
@@ -256,6 +259,30 @@ class TaskDialog(QDialog):
         due_row.addWidget(self._due_btn, stretch=1)
         self._due_check.toggled.connect(self._on_due_check_toggled)
         layout.addLayout(due_row)
+
+        # Reminder row (only shown when scheduler is provided)
+        if self._scheduler is not None:
+            reminder_row = QHBoxLayout()
+            reminder_row.setSpacing(10)
+            self._reminder_check = QCheckBox("🔔 Reminder:")
+            self._reminder_check.setStyleSheet(
+                f"QCheckBox {{ background: transparent; color: {self._tc()}; font-size: 13px; }}"
+            )
+            reminder_row.addWidget(self._reminder_check)
+
+            self._reminder_btn = QPushButton("🔔  Pick reminder time")
+            self._reminder_btn.setEnabled(False)
+            self._reminder_btn.setFixedHeight(38)
+            self._reminder_btn.setStyleSheet(
+                f"QPushButton {{ {self._input_ss()} text-align: left; }}"
+                f"QPushButton:disabled {{ opacity: 0.45; }}"
+                f"QPushButton:hover:enabled {{ border-color: "
+                f"{'rgba(255,255,255,0.40)' if self._art_dark else '#FF6B35'}; }}"
+            )
+            self._reminder_btn.clicked.connect(self._pick_reminder_time)
+            reminder_row.addWidget(self._reminder_btn, stretch=1)
+            self._reminder_check.toggled.connect(self._on_reminder_check_toggled)
+            layout.addLayout(reminder_row)
 
         # Subtasks label + add button
         sub_hdr = QHBoxLayout()
@@ -454,6 +481,20 @@ class TaskDialog(QDialog):
             self._due_datetime = dlg.selected_datetime()
             self._due_btn.setText(self._due_datetime.strftime("%b %d %Y  %H:%M"))
 
+    # ── Reminder helpers ──────────────────────────────────────────────────────
+
+    def _on_reminder_check_toggled(self, checked: bool) -> None:
+        self._reminder_btn.setEnabled(checked)
+        if not checked:
+            self._reminder_datetime = None
+            self._reminder_btn.setText("🔔  Pick reminder time")
+
+    def _pick_reminder_time(self) -> None:
+        dlg = _DatePickerDialog(initial=self._reminder_datetime, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._reminder_datetime = dlg.selected_datetime()
+            self._reminder_btn.setText(self._reminder_datetime.strftime("%b %d %Y  %H:%M"))
+
     # ── Save ──────────────────────────────────────────────────────────────────
 
     def _save(self) -> None:
@@ -487,4 +528,27 @@ class TaskDialog(QDialog):
             )
 
         self.task_saved.emit(task)
+
+        # Create a one-time reminder if requested
+        if (self._scheduler is not None
+                and getattr(self, "_reminder_check", None) is not None
+                and self._reminder_check.isChecked()
+                and self._reminder_datetime is not None):
+            from remindee.models.reminder import Reminder, FrequencyType
+            from remindee.utils.database import get_session
+            with get_session() as session:
+                reminder = Reminder(
+                    user_id=self._user.id,
+                    name=title,
+                    frequency=FrequencyType.SPECIFIC,
+                    specific_datetime=self._reminder_datetime,
+                    is_active=True,
+                    is_done=False,
+                )
+                session.add(reminder)
+                session.flush()
+                session.refresh(reminder)
+                session.expunge(reminder)
+            self._scheduler.schedule_reminder(reminder)
+
         self.accept()
