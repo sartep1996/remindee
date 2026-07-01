@@ -5,7 +5,7 @@ import random
 from datetime import datetime
 from typing import Optional
 
-from PySide6.QtCore import QDate, QRectF, Signal
+from PySide6.QtCore import QDate, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QTextCursor
 from PySide6.QtWidgets import (
     QCalendarWidget, QCheckBox, QDialog, QDialogButtonBox,
@@ -19,6 +19,27 @@ from remindee.services.task_service import TaskService
 from remindee.ui.reminder_card import (
     _DARK_BASES, _SCHEMES, _STYLES, _draw_base,
 )
+
+
+class _BodyEdit(QTextEdit):
+    """QTextEdit where clicking on a [ ] / [x] line prefix toggles the checkbox."""
+
+    def mousePressEvent(self, event) -> None:
+        super().mousePressEvent(event)
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        cursor = self.cursorForPosition(event.position().toPoint())
+        # Only react when the click lands within the 4-char "[ ] " / "[x] " prefix
+        if cursor.positionInBlock() >= 4:
+            return
+        cursor.select(QTextCursor.SelectionType.LineUnderCursor)
+        line = cursor.selectedText()
+        if line.startswith('[ ] '):
+            cursor.insertText('[x] ' + line[4:])
+            self.setTextCursor(cursor)
+        elif line.startswith('[x] '):
+            cursor.insertText('[ ] ' + line[4:])
+            self.setTextCursor(cursor)
 
 
 class _DatePickerDialog(QDialog):
@@ -277,7 +298,7 @@ class TaskDialog(QDialog):
         layout.addLayout(body_hdr)
 
         # Body — fills available space; [ ] / [x] lines are subtasks
-        self._body_edit = QTextEdit()
+        self._body_edit = _BodyEdit()
         self._body_edit.setPlaceholderText(
             "Write notes here…\n\n"
             "Select any line and click ☐ Make subtask to turn it into a checklist item.\n"
